@@ -1,11 +1,12 @@
 import { Client, GatewayIntentBits } from 'discord.js';
 
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds] // minimal intent just to connect
-});
+console.log('Token length:', process.env.DISCORD_TOKEN?.length); // sanity check
+
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
+  process.exit(0); // stop after testing
 });
 
 client.on('error', (err) => {
