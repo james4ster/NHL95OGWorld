@@ -26,7 +26,7 @@ const client = new Client({
 handleGuildMemberAdd(client); // Optional welcome messages
 
 // === Function to write new member to Google Sheets ===
-async function writePlayerToSheet(discordId, username, nickname, displayName, joinDate) {
+async function writePlayerToSheet(discordId, username, displayName, joinDate) {
   const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
   const auth = new google.auth.GoogleAuth({
     credentials,
@@ -37,11 +37,11 @@ async function writePlayerToSheet(discordId, username, nickname, displayName, jo
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.SPREADSHEET_ID,
-    range: 'PlayerMaster!A:E',  // A=Discord ID, B=Username, C=Nickname, D=Display Name, E=Join Date
+    range: 'PlayerMaster!A:E',  // A=Discord ID, B=Username, C=Display Name, D=Join Date
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     requestBody: {
-      values: [[discordId, username, nickname || '', displayName, joinDate]],
+      values: [[discordId, username, displayName, joinDate]],
     },
   });
 
@@ -53,12 +53,11 @@ async function writePlayerToSheet(discordId, username, nickname, displayName, jo
 client.on('guildMemberAdd', async (member) => {
   const discordId = member.id;
   const username = member.user.tag;
-  const nickname = member.nickname;       // server-specific nickname
   const displayName = member.displayName; // nickname or username fallback
   const joinDate = new Date().toLocaleString(); // capture join timestamp
 
   try {
-    await writePlayerToSheet(discordId, username, nickname, displayName, joinDate);
+    await writePlayerToSheet(discordId, username, displayName, joinDate);
   } catch (err) {
     console.error('❌ Failed to add new member to Players tab:', err);
   }

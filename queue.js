@@ -1,58 +1,92 @@
 // queue.js
-import { nhlEmojiMap } from './nhlEmojiMap.js';
+import { SlashCommandBuilder } from 'discord.js';
+import { nhlEmojiMap } from './nhlEmojiMap.js'; // your imported emoji map
 
-const queue = []; // in-memory queue
+// Keep track of the queue
+const queue = [];
 
+// Helper to get NHL emoji
+function getNHLEmoji(teamCode) {
+  return nhlEmojiMap[teamCode] || '🏒';
+}
+
+// Setup slash commands and interactions
 export function setupQueueCommands(client) {
-
   client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isCommand()) return;
+    if (!interaction.isChatInputCommand()) return;
 
-    const userId = interaction.user.id;
-    const username = interaction.user.username;
+    const { commandName } = interaction;
 
-    // Simplified team assignment: pick random available NHL team
-    const nhlTeams = Object.keys(nhlEmojiMap);
-
-    const getRandomTeam = () => nhlTeams[Math.floor(Math.random() * nhlTeams.length)];
-
-    if (interaction.commandName === 'play') {
-      if (queue.some(p => p.id === userId)) {
-        return interaction.reply({ content: '⚠️ You are already in the queue!', ephemeral: true });
-      }
-
-      const player = {
-        id: userId,
-        username,
-        team: getRandomTeam()
-      };
-
-      queue.push(player);
-
-      // If there’s already someone waiting, match them
-      if (queue.length >= 2) {
-        const player1 = queue.shift(); // first in queue
-        const player2 = queue.shift(); // second in queue
-
-        const matchupMsg = `🏒 Matchup Ready! \n${nhlEmojiMap[player1.team]} **${player1.username}** vs ${nhlEmojiMap[player2.team]} **${player2.username}**`;
-        await interaction.reply(matchupMsg);
-      } else {
-        // first player in queue
-        const allPlayers = queue.map(p => `<@${p.id}>`).join(', ');
-        await interaction.reply({
-          content: `🟢 You’ve joined the queue! Waiting for another player... Currently in queue: ${allPlayers}`,
-          ephemeral: false
-        });
-      }
+    if (commandName === 'play') {
+      await handlePlay(interaction);
     }
 
-    if (interaction.commandName === 'leave') {
-      const index = queue.findIndex(p => p.id === userId);
-      if (index === -1) return interaction.reply({ content: '⚠️ You are not in the queue.', ephemeral: true });
+    if (commandName === 'leave') {
+      await handleLeave(interaction);
+    }
 
-      queue.splice(index, 1);
-      const allPlayers = queue.map(p => `<@${p.id}>`).join(', ');
-      await interaction.reply({ content: `🛑 You left the queue. Players still waiting: ${allPlayers || 'None'}`, ephemeral: false });
+    if (commandName === 'queue') {
+      await handleQueue(interaction);
     }
   });
+}
+
+// === /play Command ===
+async function handlePlay(interaction) {
+  const user = interaction.user;
+
+  // Already in queue
+  if (queue.find(p => p.id === user.id)) {
+    await interaction.reply({ content: `⚠️ You're already in the queue, <@${user.id}>!`, ephemeral: true });
+    return;
+  }
+
+  queue.push(user);
+  await interaction.reply(`🟢 You’ve joined the queue! Waiting for another player... Currently in queue: ${queue.map(u => `<@${u.id}>`).join(', ')}`);
+
+  // If two or more players, start a match
+  if (queue.length >= 2) {
+    const [player1, player2] = queue.splice(0, 2); // remove from queue
+
+    // Randomize home/away
+    const home = Math.random() < 0.5 ? player1 : player2;
+    const away = home === player1 ? player2 : player1;
+
+    // Random teams
+    const teams = Object.keys(nhlEmojiMap);
+    const homeTeam = teams[Math.floor(Math.random() * teams.length)];
+    const awayTeam = teams[Math.floor(Math.random() * teams.length)];
+
+    const homeEmoji = getNHLEmoji(homeTeam);
+    const awayEmoji = getNHLEmoji(awayTeam);
+
+    await interaction.followUp(
+      `🏒 **Matchup Ready!**\n${awayEmoji} <@${away.id}> **at** ${homeEmoji} <@${home.id}>`
+    );
+  }
+}
+
+// === /leave Command ===
+async function handleLeave(interaction) {
+  const user = interaction.user;
+  const index = queue.findIndex(p => p.id === user.id);
+
+  if (index === -1) {
+    await interaction.reply({ content: `⚠️ You are not in the queue, <@${user.id}>.`, ephemeral: true });
+    return;
+  }
+
+  queue.splice(index, 1);
+  await interaction.reply(`🛑 You have left the queue, <@${user.id}>.`);
+}
+
+// === /queue Command ===
+async function handleQueue(interaction) {
+  if (queue.length === 0) {
+    await interaction.reply('🚫 The queue is currently empty.');
+    return;
+  }
+
+  const queueList = queue.map(u => `<@${u.id}>`).join(', ');
+  await interaction.reply(`📋 Current queue (${queue.length}): ${queueList}`);
 }
