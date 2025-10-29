@@ -44,26 +44,26 @@ async function handlePlay(interaction) {
   queue.push(user);
   await interaction.reply(`🟢 You’ve joined the queue! Waiting for another player... Currently in queue: ${queue.map(u => `<@${u.id}>`).join(', ')}`);
 
-  // If two or more players, start a match
-  if (queue.length >= 2) {
-    const [player1, player2] = queue.splice(0, 2); // remove from queue
+// If two or more players, start a match
+if (queue.length >= 2) {
+  const [player1, player2] = queue.splice(0, 2); // remove from queue
 
-    // Randomize home/away
-    const home = Math.random() < 0.5 ? player1 : player2;
-    const away = home === player1 ? player2 : player1;
+  // Randomize home/away
+  const home = Math.random() < 0.5 ? player1 : player2;
+  const away = home === player1 ? player2 : player1;
 
-    // Random teams
-    const teams = Object.keys(nhlEmojiMap);
-    const homeTeam = teams[Math.floor(Math.random() * teams.length)];
-    const awayTeam = teams[Math.floor(Math.random() * teams.length)];
+  // Random teams
+  const teams = Object.keys(nhlEmojiMap);
+  const homeTeam = teams[Math.floor(Math.random() * teams.length)];
+  const awayTeam = teams[Math.floor(Math.random() * teams.length)];
 
-    const homeEmoji = getNHLEmoji(homeTeam);
-    const awayEmoji = getNHLEmoji(awayTeam);
+  const homeEmoji = getNHLEmoji(homeTeam);
+  const awayEmoji = getNHLEmoji(awayTeam);
 
-    await interaction.followUp(
-      `🏒 **Matchup Ready!**\n${awayEmoji} <@${away.id}> **at** ${homeEmoji} <@${home.id}>`
-    );
-  }
+  // Send matchup directly to the channel
+  await interaction.channel.send(
+    `🏒 **Matchup Ready!**\n${awayEmoji} <@${away.id}> **at** ${homeEmoji} <@${home.id}>`
+  );
 }
 
 // === /leave Command ===
