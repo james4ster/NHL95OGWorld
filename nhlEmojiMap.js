@@ -1,4 +1,34 @@
 export const nhlEmojiMap = {
+  "ANA": ":ducks:",          
+  "BOS": ":bruins:",
+  "BUF": ":sabres:",
+  "CAL": ":flames:",
+  "CHI": ":blackhawks:",
+  "DAL": ":stars1:",          
+  "DET": ":redwings:",
+  "EDM": ":oilers:",
+  "FLA": ":panthers:",
+  "HFD": ":whalers:",       
+  "LAK": ":kings:",
+  "MTL": ":canadiens:",
+  "NJD": ":devils:",
+  "NYI": ":islanders:",
+  "NYR": ":rangers:",
+  "OTT": ":senators:",
+  "PHI": ":flyers:",
+  "PIT": ":penguins:",
+  "QUE": ":nordiques:",      
+  "SJS": ":sharks:",         
+  "STL": ":blues:",
+  "TBL": ":lightning:",
+  "TOR": ":maple_leafs:",
+  "VAN": ":canucks:",
+  "WSH": ":capitals:",
+  "WPG": ":jets:"  
+};
+
+
+/*export const nhlEmojiMap = {
   "ANA": "<:ducks:1433167926675898532>",          
   "BOS": "<:bruins:1433150106235834580>",
   "BUF": "<:sabres:1433150106235834580>",
@@ -26,3 +56,4 @@ export const nhlEmojiMap = {
   "WSH": "<:capitals:1433150106235834580>",
   "WPG": "<:jets:1433150106235834580>"            
 };
+*/
