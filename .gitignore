@@ -133,3 +133,5 @@ dist
 .breakpointspnpl_service_account.json
 pnpl_service_account.json
 archive/
+
+testCaptureUser.js
