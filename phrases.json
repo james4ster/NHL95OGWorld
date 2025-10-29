@@ -1,0 +1,39 @@
+[
+  {
+    "triggers": ["bs", "down b"],
+    "response": "🐺 Listen..... down vaginoids are not allowed in this league. If you want to watch a movie about an elderly woman swimming, I'll be your Huckleberry"
+  },
+  {
+    "triggers": ["ot", "overtime"],
+    "response": "🐺 Nobody gives a fuck if your game went to overtime",
+    "channel": ["pure-scores", "s14-playoff-scores"]
+  },
+  {
+    "triggers": ["this league sucks"],
+    "response": "🐺 I agree ~ wanna watch Nyad with me?"
+  },
+  {
+    "triggers": ["penalties"],
+    "response": "🐺 This league will never have penalties numnuts.  Unless you mean for not finishing games, we have those!"
+  },
+  {
+    "triggers": ["seagull", "sea gull"],
+    "response": "https://media.tenor.com/s9-xZILThyMAAAAC/seagull-screaming.gif"
+  },
+  {
+    "triggers": ["tisi", "there i said it"],
+    "response": "https://tenor.com/view/there-i-said-it-done-finished-schitts-creek-gif-7627004"
+  },
+  {
+    "triggers": ["grab a beer"],
+    "response": "🐺 I'm gonna grab one too."
+  },
+  {
+    "triggers": ["glhf", "gl hf", "gl", "good luck have fun"],
+    "response": "🐺 Wrong channel....TY"
+  },
+  {
+    "triggers": ["tecmo"],
+    "response": "🐺 Nobody cares about Tecmo Bowl....TY"
+  }
+]
