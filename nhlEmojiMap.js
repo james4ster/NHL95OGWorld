@@ -1,4 +1,4 @@
-export const nhlEmojiMap = {
+/*export const nhlEmojiMap = {
   "ANA": ":ducks:",          
   "BOS": ":bruins:",
   "BUF": ":sabres:",
@@ -26,9 +26,9 @@ export const nhlEmojiMap = {
   "WSH": ":capitals:",
   "WPG": ":jets:"  
 };
+*/
 
-
-/*export const nhlEmojiMap = {
+export const nhlEmojiMap = {
   "ANA": "<:ducks:1433167926675898532>",          
   "BOS": "<:bruins:1433150106235834580>",
   "BUF": "<:sabres:1433150106235834580>",
@@ -56,4 +56,3 @@ export const nhlEmojiMap = {
   "WSH": "<:capitals:1433150106235834580>",
   "WPG": "<:jets:1433150106235834580>"            
 };
-*/
