@@ -53,7 +53,7 @@ async function writePlayerToSheet(discordId, username, displayName, joinDate) {
 client.on('guildMemberAdd', async (member) => {
   const discordId = member.id;
   const username = member.user.tag;
-  const displayName = member.displayName; // nickname or username fallback
+  const displayName = member.displayName; 
   const joinDate = new Date().toLocaleString(); // capture join timestamp
 
   try {
@@ -61,7 +61,20 @@ client.on('guildMemberAdd', async (member) => {
   } catch (err) {
     console.error('❌ Failed to add new member to Players tab:', err);
   }
-});
+
+  // === Assign default role ===
+    const roleId = '1433493333149352099'; // default role = general-player
+    const role = member.guild.roles.cache.get(roleId);
+    if (role) {
+      try {
+        await member.roles.add(role);
+        console.log(`✅ Assigned default role to ${username}`);
+      } catch (err) {
+        console.error(`❌ Failed to assign role to ${username}:`, err);
+      }
+    }
+  });
+
 
 // === Express Server ===
 const app = express();

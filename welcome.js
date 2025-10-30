@@ -6,19 +6,17 @@
 
 export function handleGuildMemberAdd(client) {
   client.on('guildMemberAdd', async (member) => {
-    const welcomeChannelId = '1197193529059979475';
+    const welcomeChannelId = '1433072805225828493';
     const channel = member.guild.channels.cache.get(welcomeChannelId);
     if (!channel) return;
 
     const message = `
-🐺 PNPL nerds, a new geek has joined! Welcome to the league, <@${member.id}>! You've just made the best decision of your life.
+🧷 Welcome to the NHL95 World Training Ground... <@${member.id}>! You've just made the best decision of your life.
 
-My name is Ed. I love dragons, the movie *Nyad*, and Pearl Jam.
+Here's some info to get you started:
 
-Listen... here's some info to get you started:
-
-📝 You can find the league rules here: <#1196274672367575040>  
-🕹️ You can grab the ROM from here: <#1197185335248031784> — you'll also find the link to the Google Sheet in there. To get edit access, DM your email to **TicklePuss**.
+📝 You can find general information here: <#1433072699789545565>  
+🕹️ You can grab the ROM from here: <#1433490791271104512> — you'll also find the link to the Google Sheet in there. To get edit access, DM your email to **TicklePuss**.
 
 PYGs...
     `;
