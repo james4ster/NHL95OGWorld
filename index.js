@@ -50,48 +50,77 @@ async function writePlayerToSheet(discordId, username, displayName, joinDate) {
 
 // === Event listener for new members ===
 // === When new member joins the server, write to PlayerMaster tab ===
+// === Event listener for new members ===
 client.on('guildMemberAdd', async (member) => {
   const discordId = member.id;
   const username = member.user.tag;
-  const displayName = member.displayName; 
+  const displayName = member.displayName;
   const joinDate = new Date().toLocaleString();
 
-  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-  const auth = new google.auth.GoogleAuth({
-    credentials,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-  const sheets = google.sheets({ version: 'v4', auth });
-
   try {
-    // 1️⃣ Check if Discord ID already exists in PlayerMaster (column A)
-    const res = await sheets.spreadsheets.values.get({
+    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    });
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    // --- Fetch existing Discord IDs in PlayerMaster ---
+    const playerRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SPREADSHEET_ID,
       range: 'PlayerMaster!A:A',
     });
+    const existingIds = playerRes.data.values ? playerRes.data.values.flat() : [];
 
-    const existingIds = res.data.values ? res.data.values.flat() : [];
     if (existingIds.includes(discordId)) {
       console.log(`ℹ️ ${username} already exists in PlayerMaster, skipping insert.`);
     } else {
-      // 2️⃣ Add new player
-      await writePlayerToSheet(discordId, username, displayName, joinDate);
+      // --- Add new player ---
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: process.env.SPREADSHEET_ID,
+        range: 'PlayerMaster!A:E',
+        valueInputOption: 'USER_ENTERED',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values: [[discordId, username, displayName, joinDate]] },
+      });
+      console.log(`✅ Added ${username} to PlayerMaster`);
+
+      // --- Fetch RawStandings once ---
+      const rawRes = await sheets.spreadsheets.values.get({
+        spreadsheetId: process.env.SPREADSHEET_ID,
+        range: 'RawStandings!A:AM', // A=Discord ID, AM=ELO
+      });
+      const data = rawRes.data.values || [];
+
+      const rowIndex = data.findIndex(row => row[0] === discordId);
+      if (rowIndex !== -1) {
+        const currentElo = data[rowIndex][38]; // Column AM, 0-based
+        if (!currentElo) {
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: process.env.SPREADSHEET_ID,
+            range: `RawStandings!AM${rowIndex + 1}`,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: [[1500]] },
+          });
+          console.log(`✅ Set default ELO = 1500 for ${username}`);
+        } else {
+          console.log(`ℹ️ ${username} already has an ELO: ${currentElo}`);
+        }
+      } else {
+        console.log(`⚠️ Discord ID ${discordId} not found in RawStandings`);
+      }
+    }
+
+    // --- Assign default role ---
+    const roleId = '1433493333149352099';
+    const role = member.guild.roles.cache.get(roleId);
+    if (role) {
+      await member.roles.add(role);
+      console.log(`✅ Assigned default role to ${username}`);
     }
 
   } catch (err) {
-    console.error('❌ Error checking or writing PlayerMaster:', err);
-  }
-
-  // === Assign default role of general-player ===
-  const roleId = '1433493333149352099';
-  const role = member.guild.roles.cache.get(roleId);
-  if (role) {
-    try {
-      await member.roles.add(role);
-      console.log(`✅ Assigned default role to ${username}`);
-    } catch (err) {
-      console.error(`❌ Failed to assign role to ${username}:`, err);
-    }
+    console.error('❌ Error processing new member:', err);
   }
 });
 
