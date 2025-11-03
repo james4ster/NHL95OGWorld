@@ -77,7 +77,6 @@ client.on('guildMemberAdd', async (member) => {
     if (existingIds.includes(discordId)) {
       console.log(`ℹ️ ${username} already exists in PlayerMaster, skipping insert.`);
     } else {
-      
       // === Add new player ===
       await sheets.spreadsheets.values.append({
         spreadsheetId: process.env.SPREADSHEET_ID,
@@ -91,30 +90,31 @@ client.on('guildMemberAdd', async (member) => {
       // === Fetch RawStandings once ===
       const rawRes = await sheets.spreadsheets.values.get({
         spreadsheetId: process.env.SPREADSHEET_ID,
-        range: 'RawStandings!A:AM', // A=Discord ID, AM=ELO
+        range: 'RawStandings!A:AO', // include AM:AO
       });
       const data = rawRes.data.values || [];
 
       const rowIndex = data.findIndex(row => row[0] === discordId);
-    if (rowIndex !== -1) {
-      const currentElo = data[rowIndex][38]; // Column AM (ELO)
-      const highestElo = data[rowIndex][39]; // Column AN (Highest ELO)
-      const lowestElo = data[rowIndex][40];  // Column AO (Lowest ELO)
+      if (rowIndex !== -1) {
+        const currentElo = data[rowIndex][38]; // Column AM
+        const highestElo = data[rowIndex][39]; // Column AN
+        const lowestElo = data[rowIndex][40];  // Column AO
 
-      if (!currentElo) {
-        // Initialize all three values to 1500
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: process.env.SPREADSHEET_ID,
-          range: `RawStandings!AM${rowIndex + 1}:AO${rowIndex + 1}`,
-          valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [[1500, 1500, 1500]] },
-        });
-        console.log(`✅ Set default ELO = 1500 (current, highest, lowest) for ${username}`);
+        if (!currentElo) {
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: process.env.SPREADSHEET_ID,
+            range: `RawStandings!AM${rowIndex + 1}:AO${rowIndex + 1}`,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: [[1500, 1500, 1500]] },
+          });
+          console.log(`✅ Set default ELO = 1500 (current, highest, lowest) for ${username}`);
+        } else {
+          console.log(`ℹ️ ${username} already has an ELO: ${currentElo} (High: ${highestElo}, Low: ${lowestElo})`);
+        }
       } else {
-        console.log(`ℹ️ ${username} already has an ELO: ${currentElo} (High: ${highestElo}, Low: ${lowestElo})`);
+        console.log(`⚠️ Discord ID ${discordId} not found in RawStandings`);
       }
     }
-
 
     // === Assign default role ===
     const roleId = '1433493333149352099';
@@ -128,6 +128,7 @@ client.on('guildMemberAdd', async (member) => {
     console.error('❌ Error processing new member:', err);
   }
 });
+
 
 
 // === Express Server ===
