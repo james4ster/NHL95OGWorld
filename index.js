@@ -2,7 +2,8 @@
 Main bot file for NHL95OGBot
  - Discord bot setup
  - Capture new Discord joiners automatically when the join the discord server - write to PlayerMaster tab
-
+ - Assigns default ELO (1500) to new players in RawStandings
+ - Assigns default role of general-player to new players
  */
 
 // === Imports ===
@@ -23,7 +24,7 @@ const client = new Client({
     GatewayIntentBits.MessageContent
   ]
 });
-handleGuildMemberAdd(client); // Optional welcome messages
+handleGuildMemberAdd(client); // New joiner function
 
 // === Function to write new member to Google Sheets ===
 async function writePlayerToSheet(discordId, username, displayName, joinDate) {
@@ -48,6 +49,7 @@ async function writePlayerToSheet(discordId, username, displayName, joinDate) {
   console.log(`✅ Added ${username} to Players tab`);
 }
 
+
 // === Event listener for new members ===
 // === When new member joins the server, write to PlayerMaster tab ===
 // === Event listener for new members ===
@@ -65,7 +67,7 @@ client.on('guildMemberAdd', async (member) => {
     });
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // --- Fetch existing Discord IDs in PlayerMaster ---
+    // === Fetch existing Discord IDs in PlayerMaster ===
     const playerRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SPREADSHEET_ID,
       range: 'PlayerMaster!A:A',
@@ -75,7 +77,8 @@ client.on('guildMemberAdd', async (member) => {
     if (existingIds.includes(discordId)) {
       console.log(`ℹ️ ${username} already exists in PlayerMaster, skipping insert.`);
     } else {
-      // --- Add new player ---
+      
+      // === Add new player ===
       await sheets.spreadsheets.values.append({
         spreadsheetId: process.env.SPREADSHEET_ID,
         range: 'PlayerMaster!A:E',
@@ -85,7 +88,7 @@ client.on('guildMemberAdd', async (member) => {
       });
       console.log(`✅ Added ${username} to PlayerMaster`);
 
-      // --- Fetch RawStandings once ---
+      // === Fetch RawStandings once ===
       const rawRes = await sheets.spreadsheets.values.get({
         spreadsheetId: process.env.SPREADSHEET_ID,
         range: 'RawStandings!A:AM', // A=Discord ID, AM=ELO
@@ -93,25 +96,27 @@ client.on('guildMemberAdd', async (member) => {
       const data = rawRes.data.values || [];
 
       const rowIndex = data.findIndex(row => row[0] === discordId);
-      if (rowIndex !== -1) {
-        const currentElo = data[rowIndex][38]; // Column AM, 0-based
-        if (!currentElo) {
-          await sheets.spreadsheets.values.update({
-            spreadsheetId: process.env.SPREADSHEET_ID,
-            range: `RawStandings!AM${rowIndex + 1}`,
-            valueInputOption: 'USER_ENTERED',
-            requestBody: { values: [[1500]] },
-          });
-          console.log(`✅ Set default ELO = 1500 for ${username}`);
-        } else {
-          console.log(`ℹ️ ${username} already has an ELO: ${currentElo}`);
-        }
+    if (rowIndex !== -1) {
+      const currentElo = data[rowIndex][38]; // Column AM (ELO)
+      const highestElo = data[rowIndex][39]; // Column AN (Highest ELO)
+      const lowestElo = data[rowIndex][40];  // Column AO (Lowest ELO)
+
+      if (!currentElo) {
+        // Initialize all three values to 1500
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: process.env.SPREADSHEET_ID,
+          range: `RawStandings!AM${rowIndex + 1}:AO${rowIndex + 1}`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [[1500, 1500, 1500]] },
+        });
+        console.log(`✅ Set default ELO = 1500 (current, highest, lowest) for ${username}`);
       } else {
-        console.log(`⚠️ Discord ID ${discordId} not found in RawStandings`);
+        console.log(`ℹ️ ${username} already has an ELO: ${currentElo} (High: ${highestElo}, Low: ${lowestElo})`);
       }
     }
 
-    // --- Assign default role ---
+
+    // === Assign default role ===
     const roleId = '1433493333149352099';
     const role = member.guild.roles.cache.get(roleId);
     if (role) {
@@ -152,5 +157,3 @@ setupQueueCommands(client);
     console.error(err.stack);
   }
 })();
-// The export was used to test testCaptureUser.js
-//export { writePlayerToSheet };
