@@ -111,17 +111,14 @@ export async function startTeamPickSession(channel, challenger, opponent) {
 
       // Determine next picker
       const nextPicker = pickOrder.find((p) => p.id !== currentPicker.id);
-
       if (picks[nextPicker.id]) {
-        collector.stop('complete'); // both picked
+        collector.stop('complete');
       } else {
-        // Switch to next picker
         currentPicker = nextPicker;
-        currentPage = 0; // reset pagination for next player
-
-        await channel.send({
+        await i.followUp({
           content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
           components: [getDropdownRow(currentPage), getPaginationRow(currentPage)],
+          ephemeral: false,
         });
       }
     }
