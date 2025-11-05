@@ -1,3 +1,4 @@
+// teamPick.js
 import {
   ActionRowBuilder,
   StringSelectMenuBuilder,
@@ -8,30 +9,27 @@ import { nhlEmojiMap } from './nhlEmojiMap.js';
 
 // ============================================================
 // Helper: Split teams into pages for pagination
-function paginateTeams(teams, pageSizes = [14]) {
+function paginateTeams(teams, pageSizes = [14, 12]) {
   const pages = [];
-  let index = 0;
-
+  let start = 0;
   for (let size of pageSizes) {
-    pages.push(teams.slice(index, index + size));
-    index += size;
+    pages.push(teams.slice(start, start + size));
+    start += size;
   }
-
-  // Add remaining teams to last page if any
-  if (index < teams.length) {
-    pages.push(teams.slice(index));
-  }
-
   return pages;
 }
 
 // ============================================================
 // Start the team pick session
-export async function startTeamPickSession(channel, challenger, opponent, fromChallenge = false) {
+export async function startTeamPickSession(channel, challenger, opponent) {
   const teams = Object.keys(nhlEmojiMap);
-  const pages = paginateTeams(teams, [14]); // Page 1 = 14, page 2 = rest
+  const pages = paginateTeams(teams); // first page 14, second page rest
+  const pickerPages = {
+    [challenger.id]: 0,
+    [opponent.id]: 0,
+  };
 
-  // Track current picks
+  // Track picks
   const picks = {
     [challenger.id]: null,
     [opponent.id]: null,
@@ -40,13 +38,13 @@ export async function startTeamPickSession(channel, challenger, opponent, fromCh
   // Randomly decide who picks first
   const pickOrder = Math.random() < 0.5 ? [challenger, opponent] : [opponent, challenger];
   let currentPicker = pickOrder[0];
-  let currentPage = 0;
 
   // ============================================================
   // Function to render the current page of the dropdown
-  const getDropdownRow = (pageIndex) => {
+  const getDropdownRow = (pickerId) => {
+    const pageIndex = pickerPages[pickerId];
     const menu = new StringSelectMenuBuilder()
-      .setCustomId(`team_select_${pageIndex}`)
+      .setCustomId(`team_select_${pickerId}`)
       .setPlaceholder('Select your NHL team...')
       .addOptions(
         pages[pageIndex].map((team) => ({
@@ -61,48 +59,54 @@ export async function startTeamPickSession(channel, challenger, opponent, fromCh
 
   // ============================================================
   // Function to render pagination controls
-  const getPaginationRow = (pageIndex) => {
-    return new ActionRowBuilder().addComponents(
+  const getPaginationRow = (pickerId) => {
+    const pageIndex = pickerPages[pickerId];
+    const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('prev_page')
+        .setCustomId(`prev_page_${pickerId}`)
         .setLabel('⬅️ Prev')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(pageIndex === 0),
       new ButtonBuilder()
-        .setCustomId('next_page')
+        .setCustomId(`next_page_${pickerId}`)
         .setLabel('Next ➡️')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(pageIndex === pages.length - 1)
     );
+    return row;
   };
 
   // ============================================================
   // Send initial message
   const message = await channel.send({
     content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
-    components: [getDropdownRow(currentPage), getPaginationRow(currentPage)],
+    components: [getDropdownRow(currentPicker.id), getPaginationRow(currentPicker.id)],
   });
 
-  const collector = message.createMessageComponentCollector({ time: 60000 });
+  const collector = message.createMessageComponentCollector({
+    time: 60000,
+  });
 
   // ============================================================
   // Interaction collector
   collector.on('collect', async (i) => {
+    // Only current picker can interact
     if (i.user.id !== currentPicker.id) {
-      await i.reply({ content: '⚠️ It’s not your turn!', flags: 64 }); // ephemeral via flags
+      await i.reply({ content: '⚠️ It’s not your turn!', ephemeral: true });
       return;
     }
 
-    // Handle pagination buttons
+    // Handle pagination
     if (i.isButton()) {
-      if (i.customId === 'prev_page' && currentPage > 0) currentPage--;
-      if (i.customId === 'next_page' && currentPage < pages.length - 1) currentPage++;
+      if (i.customId.startsWith('prev_page')) {
+        pickerPages[i.user.id] = Math.max(pickerPages[i.user.id] - 1, 0);
+      } else if (i.customId.startsWith('next_page')) {
+        pickerPages[i.user.id] = Math.min(pickerPages[i.user.id] + 1, pages.length - 1);
+      }
 
-      // Safely update message for pagination
-      await i.deferUpdate();
-      await message.edit({
+      await i.update({
         content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
-        components: [getDropdownRow(currentPage), getPaginationRow(currentPage)],
+        components: [getDropdownRow(currentPicker.id), getPaginationRow(currentPicker.id)],
       });
       return;
     }
@@ -118,16 +122,19 @@ export async function startTeamPickSession(channel, challenger, opponent, fromCh
       });
 
       // Switch turn or finish
-      const nextPicker = pickOrder.find((p) => p.id !== currentPicker.id);
-      if (picks[nextPicker.id]) {
+      const nextPicker = pickOrder.find((p) => !picks[p.id]);
+      if (!nextPicker) {
         collector.stop('complete');
-      } else {
-        currentPicker = nextPicker;
-        await channel.send({
-          content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
-          components: [getDropdownRow(currentPage), getPaginationRow(currentPage)],
-        });
+        return;
       }
+
+      currentPicker = nextPicker;
+
+      // Edit same message for next picker
+      await message.edit({
+        content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
+        components: [getDropdownRow(currentPicker.id), getPaginationRow(currentPicker.id)],
+      });
     }
   });
 
