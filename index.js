@@ -16,6 +16,7 @@ import { google } from 'googleapis';
 import { setupQueueCommands } from './queue.js';
 import { setupChallengeCommands } from './challenge.js'; 
 
+
 // === Discord Bot Setup ===
 const client = new Client({
   intents: [
