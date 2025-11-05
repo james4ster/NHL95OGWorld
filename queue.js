@@ -2,16 +2,17 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { nhlEmojiMap } from './nhlEmojiMap.js'; // your imported emoji map
 
-// Keep track of queue with timestamps
+// ============================================================
+// Keep track of the queue with timestamps
 const queue = [];
-const QUEUE_TIMEOUT = 10 * 60 * 1000; // remove from queue after 10 minutes of inactivity
+const QUEUE_TIMEOUT = 10 * 60 * 1000; // 10 minutes of inactivity
 
-// Helper to get NHL emoji
+// === Helper to get NHL emoji for a team ===
 function getNHLEmoji(teamCode) {
   return nhlEmojiMap[teamCode] || '🏒';
 }
 
-// Periodically clean up expired users
+// === Periodically clean up expired users ===
 setInterval(() => {
   const now = Date.now();
   for (let i = queue.length - 1; i >= 0; i--) {
@@ -24,30 +25,39 @@ setInterval(() => {
   }
 }, 60 * 1000); // check every minute
 
+// ============================================================
 // Setup slash commands and interactions
-export function setupQueueCommands(client, testChannelId) {
+export function setupQueueCommands(client) {
   client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName } = interaction;
 
-    if (commandName === 'play') await handlePlay(interaction);
+    // === /play-random Command ===
+    if (commandName === 'play-random') await handlePlayRandom(interaction);
+
+    // === /leave Command ===
     if (commandName === 'leave') await handleLeave(interaction);
+
+    // === /queue Command ===
     if (commandName === 'queue') await handleQueue(interaction);
   });
 }
 
-// === /play Command ===
-async function handlePlay(interaction) {
+// ============================================================
+// /play-random command handler
+async function handlePlayRandom(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
   const user = interaction.user;
 
   // Already in queue
   if (queue.find(p => p.id === user.id)) {
-    await interaction.reply({ content: `⚠️ You're already in the queue, <@${user.id}>!`, ephemeral: true });
+    await interaction.editReply({ content: `⚠️ You're already in the queue, <@${user.id}>!` });
     return;
   }
 
-  // Add user with timestamp + channel ref
+  // Add user with timestamp + channel reference
   queue.push({
     id: user.id,
     username: user.username,
@@ -55,7 +65,9 @@ async function handlePlay(interaction) {
     channel: interaction.channel
   });
 
-  await interaction.reply(`🟢 You’ve joined the queue! Waiting for another player... Currently in queue: ${queue.map(u => `<@${u.id}>`).join(', ')}`);
+  await interaction.editReply({
+    content: `🟢 You’ve joined the random queue! Waiting for another player... Currently in queue: ${queue.map(u => `<@${u.id}>`).join(', ')}`
+  });
 
   // If two or more players, start a match
   if (queue.length >= 2) {
@@ -69,21 +81,20 @@ async function handlePlay(interaction) {
     const teams = Object.keys(nhlEmojiMap);
     const homeTeam = teams[Math.floor(Math.random() * teams.length)];
     let awayTeam = teams[Math.floor(Math.random() * teams.length)];
-    while (awayTeam === homeTeam) {
-      awayTeam = teams[Math.floor(Math.random() * teams.length)];
-    }
+    while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
 
     const homeEmoji = getNHLEmoji(homeTeam);
     const awayEmoji = getNHLEmoji(awayTeam);
 
-    // Announce matchup
+    // Announce matchup directly to the channel
     await interaction.channel.send(
-      `🏒 **Matchup Ready!**\n${awayEmoji} <@${away.id}> **at** ${homeEmoji} <@${home.id}>`
+      `🏒 **Random Match Ready!**\n${awayEmoji} <@${away.id}> **at** ${homeEmoji} <@${home.id}>`
     );
   }
 }
 
-// === /leave Command ===
+// ============================================================
+// /leave command handler
 async function handleLeave(interaction) {
   const user = interaction.user;
   const index = queue.findIndex(p => p.id === user.id);
@@ -97,7 +108,8 @@ async function handleLeave(interaction) {
   await interaction.reply(`🛑 You have left the queue, <@${user.id}>.`);
 }
 
-// === /queue Command ===
+// ============================================================
+// /queue command handler
 async function handleQueue(interaction) {
   if (queue.length === 0) {
     await interaction.reply('🚫 The queue is currently empty.');
