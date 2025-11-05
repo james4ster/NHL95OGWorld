@@ -2,118 +2,78 @@
 import {
   ActionRowBuilder,
   StringSelectMenuBuilder,
-  ButtonBuilder,
-  ButtonStyle,
 } from 'discord.js';
 import { nhlEmojiMap } from './nhlEmojiMap.js';
-
-// ============================================================
-// Helper: Split teams into pages for pagination (first 14, rest)
-function paginateTeams(teams) {
-  const pages = [];
-  pages.push(teams.slice(0, 14)); // first page = 14
-  pages.push(teams.slice(14));    // second page = rest
-  return pages;
-}
 
 // ============================================================
 // Start the team pick session
 export async function startTeamPickSession(channel, challenger, opponent) {
   const teams = Object.keys(nhlEmojiMap);
-  const pages = paginateTeams(teams);
 
+  // Track picks
   const picks = {
     [challenger.id]: null,
     [opponent.id]: null,
   };
 
+  // Randomly decide who picks first
   const pickOrder = Math.random() < 0.5 ? [challenger, opponent] : [opponent, challenger];
   let currentPicker = pickOrder[0];
-  let currentPage = 0;
 
   // ============================================================
-  const getDropdownRow = (pageIndex) => {
+  // Function to render the dropdown menu
+  const getDropdownRow = () => {
     const menu = new StringSelectMenuBuilder()
-      .setCustomId(`team_select_${pageIndex}`)
+      .setCustomId('team_select')
       .setPlaceholder('Select your NHL team...')
       .addOptions(
-        pages[pageIndex].map((team) => ({
+        teams.map((team) => ({
           label: team,
           value: team,
           emoji: nhlEmojiMap[team],
         }))
       );
+
     return new ActionRowBuilder().addComponents(menu);
   };
 
-  const getPaginationRow = (pageIndex) => {
-    return new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('prev_page')
-        .setLabel('⬅️ Prev')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(pageIndex === 0),
-      new ButtonBuilder()
-        .setCustomId('next_page')
-        .setLabel('Next ➡️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(pageIndex === pages.length - 1)
-    );
-  };
-
   // ============================================================
+  // Send initial message
   const message = await channel.send({
     content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
-    components: [getDropdownRow(currentPage), getPaginationRow(currentPage)],
+    components: [getDropdownRow()],
   });
 
   const collector = message.createMessageComponentCollector({ time: 60000 });
 
+  // ============================================================
+  // Collector logic
   collector.on('collect', async (i) => {
-    // Pagination
-    if (i.isButton()) {
-      if (i.user.id !== currentPicker.id) {
-        await i.reply({ content: '⚠️ It’s not your turn!', ephemeral: true });
-        return;
-      }
+    if (!i.isStringSelectMenu()) return;
 
-      if (i.customId === 'prev_page' && currentPage > 0) currentPage--;
-      if (i.customId === 'next_page' && currentPage < pages.length - 1) currentPage++;
-
-      await i.update({
-        content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
-        components: [getDropdownRow(currentPage), getPaginationRow(currentPage)],
-      });
+    if (i.user.id !== currentPicker.id) {
+      await i.reply({ content: '⚠️ It’s not your turn!', ephemeral: true });
       return;
     }
 
-    // Team selection
-    if (i.isStringSelectMenu()) {
-      if (i.user.id !== currentPicker.id) {
-        await i.reply({ content: '⚠️ It’s not your turn!', ephemeral: true });
-        return;
-      }
+    const selectedTeam = i.values[0];
+    picks[currentPicker.id] = selectedTeam;
 
-      const selectedTeam = i.values[0];
-      picks[currentPicker.id] = selectedTeam;
+    await i.update({
+      content: `✅ <@${currentPicker.id}> picked **${nhlEmojiMap[selectedTeam]} ${selectedTeam}**!`,
+      components: [],
+    });
 
-      await i.update({
-        content: `✅ <@${currentPicker.id}> picked **${nhlEmojiMap[selectedTeam]} ${selectedTeam}**!`,
-        components: [],
+    // Check if the other picker already picked
+    const nextPicker = pickOrder.find((p) => p.id !== currentPicker.id);
+    if (picks[nextPicker.id]) {
+      collector.stop('complete');
+    } else {
+      currentPicker = nextPicker;
+      await channel.send({
+        content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
+        components: [getDropdownRow()],
       });
-
-      const nextPicker = pickOrder.find((p) => p.id !== currentPicker.id);
-
-      if (picks[nextPicker.id]) {
-        collector.stop('complete');
-      } else {
-        currentPicker = nextPicker;
-        // USE channel.send, NOT i.update for next picker
-        await channel.send({
-          content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
-          components: [getDropdownRow(currentPage), getPaginationRow(currentPage)],
-        });
-      }
     }
   });
 
@@ -124,6 +84,8 @@ export async function startTeamPickSession(channel, challenger, opponent) {
     }
 
     const [user1, user2] = Object.keys(picks);
+
+    // Randomize home/away
     const home = Math.random() < 0.5 ? user1 : user2;
     const away = home === user1 ? user2 : user1;
 
