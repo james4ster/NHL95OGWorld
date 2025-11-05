@@ -5,7 +5,6 @@ import { startTeamPickSession } from './teamPick.js';
 
 // ============================================================
 // Track active challenges
-// key: challengeID (random string), value: { challenger, opponent, type, status, channel }
 const activeChallenges = new Map();
 
 // Helper to generate random ID
@@ -34,7 +33,6 @@ export function setupChallengeCommands(client) {
       const challenge = activeChallenges.get(challengeID);
 
       if (!challenge) {
-        // Use reply with flags to avoid ephemeral deprecation
         await interaction.reply({ content: '⚠️ Challenge no longer exists.', ephemeral: true });
         return;
       }
@@ -47,7 +45,6 @@ export function setupChallengeCommands(client) {
       if (action === 'accept') {
         challenge.status = 'accepted';
 
-        // Update the original message
         await interaction.update({
           content: `✅ <@${challenge.opponent.id}> accepted the challenge from <@${challenge.challenger.id}>!`,
           components: [],
@@ -66,8 +63,8 @@ export function setupChallengeCommands(client) {
             `🏒 **Random Challenge Match Ready!**\n${nhlEmojiMap[awayTeam]} <@${away.id}> **at** ${nhlEmojiMap[homeTeam]} <@${home.id}>`
           );
         } else if (challenge.type === 'fixed-teams') {
-          // Pass channel and user objects to teamPick.js
-          await startTeamPickSession(challenge.channel, challenge.challenger, challenge.opponent);
+          // Pass the interaction as the channel placeholder
+          startTeamPickSession(interaction, challenge.challenger, challenge.opponent, true);
         }
 
         activeChallenges.delete(challengeID);
@@ -101,7 +98,8 @@ async function handleChallenge(interaction) {
   }
 
   const challengeID = generateChallengeID();
-  const type = interaction.commandName === 'challenge-opponent-random-teams' ? 'random-teams' : 'fixed-teams';
+  const type =
+    interaction.commandName === 'challenge-opponent-random-teams' ? 'random-teams' : 'fixed-teams';
 
   activeChallenges.set(challengeID, {
     challenger: { id: challenger.id, username: challenger.username },
@@ -116,7 +114,9 @@ async function handleChallenge(interaction) {
     new ButtonBuilder().setCustomId(`decline_${challengeID}`).setLabel('❌ Decline').setStyle(ButtonStyle.Danger)
   );
 
-  await interaction.reply({
+  // Defer then edit reply to avoid Unknown interaction
+  await interaction.deferReply({ ephemeral: false });
+  await interaction.editReply({
     content: `🏒 <@${opponent.id}>, you have been challenged by <@${challenger.id}>! Do you accept?`,
     components: [row],
   });
