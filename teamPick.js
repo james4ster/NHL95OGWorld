@@ -117,13 +117,16 @@ export async function startTeamPickSession(interaction, challenger, opponent, fr
       // Switch turn or finish
       const nextPicker = pickOrder.find((p) => p.id !== currentPicker.id);
       if (picks[nextPicker.id]) {
-        collector.stop('complete');
+          collector.stop('complete');
       } else {
-        currentPicker = nextPicker;
-        await i.followUp({
-          content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
-          components: [getDropdownRow(currentPage), getPaginationRow(currentPage)],
-        });
+          currentPicker = nextPicker;
+
+          // Use followUp to prompt the next player
+          await i.followUp({
+              content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
+              components: [getDropdownRow(currentPage), getPaginationRow(currentPage)],
+              ephemeral: false
+          });
       }
     }
   });
