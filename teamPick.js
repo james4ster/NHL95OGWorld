@@ -9,17 +9,17 @@ import { nhlEmojiMap } from './nhlEmojiMap.js';
 
 // ============================================================
 // Helper: Split teams into pages for pagination
-function paginateTeams(teams, pageSize = 25) {
+function paginateTeams(teams) {
+  // First page: 14 teams, second: the rest
   const pages = [];
-  for (let i = 0; i < teams.length; i += pageSize) {
-    pages.push(teams.slice(i, i + pageSize));
-  }
+  pages.push(teams.slice(0, 14)); // first 14
+  if (teams.length > 14) pages.push(teams.slice(14)); // the rest
   return pages;
 }
 
 // ============================================================
 // Start the team pick session
-export async function startTeamPickSession(interaction, challenger, opponent, fromChallenge = false) {
+export async function startTeamPickSession(interaction, challenger, opponent) {
   const channel = interaction.channel;
   const teams = Object.keys(nhlEmojiMap);
   const pages = paginateTeams(teams);
@@ -48,7 +48,6 @@ export async function startTeamPickSession(interaction, challenger, opponent, fr
           emoji: nhlEmojiMap[team],
         }))
       );
-
     return new ActionRowBuilder().addComponents(menu);
   };
 
@@ -78,16 +77,22 @@ export async function startTeamPickSession(interaction, challenger, opponent, fr
   });
 
   const collector = message.createMessageComponentCollector({
-    time: 60000,
+    time: 120000, // 2 minutes
   });
 
   // ============================================================
   // Interaction collector
   collector.on('collect', async (i) => {
+    // Ignore interactions from users who aren't in the challenge
+    if (![challenger.id, opponent.id].includes(i.user.id)) {
+      await i.reply({ content: '⚠️ You’re not part of this challenge!', flags: 64 });
+      return;
+    }
+
     // Handle pagination
     if (i.isButton()) {
       if (i.user.id !== currentPicker.id) {
-        await i.reply({ content: '⚠️ It’s not your turn!', ephemeral: true });
+        await i.reply({ content: '⚠️ It’s not your turn!', flags: 64 });
         return;
       }
 
@@ -104,19 +109,20 @@ export async function startTeamPickSession(interaction, challenger, opponent, fr
     // Handle team selection
     if (i.isStringSelectMenu()) {
       if (i.user.id !== currentPicker.id) {
-        await i.reply({ content: '⚠️ It’s not your turn!', ephemeral: true });
+        await i.reply({ content: '⚠️ It’s not your turn!', flags: 64 });
         return;
       }
 
       const selectedTeam = i.values[0];
       picks[currentPicker.id] = selectedTeam;
 
+      // Confirm the pick and disable dropdown
       await i.update({
         content: `✅ <@${currentPicker.id}> picked **${nhlEmojiMap[selectedTeam]} ${selectedTeam}**!`,
         components: [],
       });
 
-      // Switch turn or finish
+      // Check if both players picked
       const nextPicker = pickOrder.find((p) => p.id !== currentPicker.id);
       if (picks[nextPicker.id]) {
         collector.stop('complete');
