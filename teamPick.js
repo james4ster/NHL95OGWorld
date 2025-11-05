@@ -8,35 +8,33 @@ import {
 import { nhlEmojiMap } from './nhlEmojiMap.js';
 
 // ============================================================
-// Paginate teams into pages: 14 first, rest second
-function paginateTeams(teams) {
-  const firstPage = teams.slice(0, 14);
-  const secondPage = teams.slice(14);
-  const pages = [firstPage];
-  if (secondPage.length) pages.push(secondPage);
-  return pages;
+// Helper: Split teams into pages for pagination
+function paginateTeams(teams, firstPageSize = 14) {
+  return [teams.slice(0, firstPageSize), teams.slice(firstPageSize)];
 }
 
 // ============================================================
 // Start the team pick session
-export async function startTeamPickSession(interaction, challenger, opponent) {
+export async function startTeamPickSession(channel, challenger, opponent) {
   const teams = Object.keys(nhlEmojiMap);
   const pages = paginateTeams(teams);
 
+  // Track current picks
   const picks = {
     [challenger.id]: null,
     [opponent.id]: null,
   };
 
+  // Randomly decide who picks first
   const pickOrder = Math.random() < 0.5 ? [challenger, opponent] : [opponent, challenger];
-  let currentPicker = pickOrder[0];
+  let currentPickerIndex = 0;
   let currentPage = 0;
-  let message; // Will store the dropdown message
 
   // ============================================================
+  // Build dropdown row for a given page
   const getDropdownRow = (pageIndex) => {
     const menu = new StringSelectMenuBuilder()
-      .setCustomId(`team_select_${pageIndex}_${currentPicker.id}`)
+      .setCustomId(`team_select`)
       .setPlaceholder('Select your NHL team...')
       .addOptions(
         pages[pageIndex].map((team) => ({
@@ -45,10 +43,11 @@ export async function startTeamPickSession(interaction, challenger, opponent) {
           emoji: nhlEmojiMap[team],
         }))
       );
-
     return new ActionRowBuilder().addComponents(menu);
   };
 
+  // ============================================================
+  // Build pagination buttons
   const getPaginationRow = (pageIndex) => {
     return new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -65,37 +64,41 @@ export async function startTeamPickSession(interaction, challenger, opponent) {
   };
 
   // ============================================================
-  message = await interaction.followUp({
-    content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
+  // Send initial message
+  let message = await channel.send({
+    content: `🎯 <@${pickOrder[currentPickerIndex].id}>, it's your turn to pick your team!`,
     components: [getDropdownRow(currentPage), getPaginationRow(currentPage)],
-    fetchReply: true,
   });
 
+  // ============================================================
+  // Collector for dropdown and button interactions
   const collector = message.createMessageComponentCollector({
-    time: 60000,
+    componentType: ['STRING_SELECT', 'BUTTON'],
+    time: 120000, // 2 minutes
   });
 
   collector.on('collect', async (i) => {
-    // Ignore if not current picker
+    const currentPicker = pickOrder[currentPickerIndex];
+
+    // Not this user's turn
     if (i.user.id !== currentPicker.id) {
-      return i.reply({
-        content: '⚠️ It’s not your turn!',
-        ephemeral: true,
-      });
+      await i.reply({ content: '⚠️ It’s not your turn!', ephemeral: true });
+      return;
     }
 
-    // Handle pagination
+    // === Handle pagination buttons ===
     if (i.isButton()) {
       if (i.customId === 'prev_page' && currentPage > 0) currentPage--;
       if (i.customId === 'next_page' && currentPage < pages.length - 1) currentPage++;
 
-      return i.update({
+      await i.update({
         content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
         components: [getDropdownRow(currentPage), getPaginationRow(currentPage)],
       });
+      return;
     }
 
-    // Handle team selection
+    // === Handle team selection ===
     if (i.isStringSelectMenu()) {
       const selectedTeam = i.values[0];
       picks[currentPicker.id] = selectedTeam;
@@ -105,34 +108,39 @@ export async function startTeamPickSession(interaction, challenger, opponent) {
         components: [],
       });
 
-      const nextPicker = pickOrder.find((p) => p.id !== currentPicker.id);
-      if (picks[nextPicker.id]) {
+      // Check if next player already picked
+      const nextPickerIndex = (currentPickerIndex + 1) % 2;
+      if (picks[pickOrder[nextPickerIndex].id]) {
         collector.stop('complete');
-      } else {
-        currentPicker = nextPicker;
-        currentPage = 0; // Reset to first page for next player
-
-        message = await interaction.followUp({
-          content: `🎯 <@${currentPicker.id}>, it's your turn to pick your team!`,
-          components: [getDropdownRow(currentPage), getPaginationRow(currentPage)],
-          fetchReply: true,
-        });
+        return;
       }
+
+      // Switch turn
+      currentPickerIndex = nextPickerIndex;
+      currentPage = 0; // reset to first page for next picker
+
+      message = await channel.send({
+        content: `🎯 <@${pickOrder[currentPickerIndex].id}>, it's your turn to pick your team!`,
+        components: [getDropdownRow(currentPage), getPaginationRow(currentPage)],
+      });
     }
   });
 
   collector.on('end', async (_, reason) => {
     if (reason !== 'complete') {
-      return interaction.followUp('⏰ Team pick session timed out.');
+      await channel.send('⏰ Team pick session timed out.');
+      return;
     }
 
-    const [team1, team2] = Object.values(picks);
     const [user1, user2] = Object.keys(picks);
+    const [team1, team2] = Object.values(picks);
+
+    // Randomize home/away
     const home = Math.random() < 0.5 ? user1 : user2;
     const away = home === user1 ? user2 : user1;
 
-    await interaction.followUp({
-      content: `🏒 **Match Ready!**\n${nhlEmojiMap[picks[away]]} <@${away}> **at** ${nhlEmojiMap[picks[home]]} <@${home}>`,
-    });
+    await channel.send(
+      `🏒 **Match Ready!**\n${nhlEmojiMap[picks[away]]} <@${away}> **at** ${nhlEmojiMap[picks[home]]} <@${home}>`
+    );
   });
 }

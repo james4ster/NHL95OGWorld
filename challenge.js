@@ -3,12 +3,18 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { nhlEmojiMap } from './nhlEmojiMap.js';
 import { startTeamPickSession } from './teamPick.js';
 
+// ============================================================
+// Track active challenges
+// key: challengeID (random string), value: { challenger, opponent, type, status, channel }
 const activeChallenges = new Map();
 
+// Helper to generate random ID
 function generateChallengeID() {
   return Math.random().toString(36).substring(2, 10);
 }
 
+// ============================================================
+// Setup challenge commands and button interactions
 export function setupChallengeCommands(client) {
   client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
@@ -26,19 +32,14 @@ export function setupChallengeCommands(client) {
     if (interaction.isButton()) {
       const [action, challengeID] = interaction.customId.split('_');
       const challenge = activeChallenges.get(challengeID);
-
       if (!challenge) {
-        return interaction.reply({
-          content: '⚠️ Challenge no longer exists.',
-          ephemeral: true,
-        });
+        await interaction.reply({ content: '⚠️ Challenge no longer exists.', ephemeral: true });
+        return;
       }
 
       if (interaction.user.id !== challenge.opponent.id) {
-        return interaction.reply({
-          content: '⚠️ Only the challenged player can respond.',
-          ephemeral: true,
-        });
+        await interaction.reply({ content: '⚠️ Only the challenged player can respond.', ephemeral: true });
+        return;
       }
 
       if (action === 'accept') {
@@ -48,22 +49,22 @@ export function setupChallengeCommands(client) {
           components: [],
         });
 
+        // Handle based on challenge type
         if (challenge.type === 'random-teams') {
           const teams = Object.keys(nhlEmojiMap);
-          let homeTeam = teams[Math.floor(Math.random() * teams.length)];
+          const homeTeam = teams[Math.floor(Math.random() * teams.length)];
           let awayTeam = teams[Math.floor(Math.random() * teams.length)];
-          while (awayTeam === homeTeam)
-            awayTeam = teams[Math.floor(Math.random() * teams.length)];
+          while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
 
           const home = Math.random() < 0.5 ? challenge.challenger : challenge.opponent;
           const away = home === challenge.challenger ? challenge.opponent : challenge.challenger;
 
-          await interaction.followUp({
-            content: `🏒 **Random Challenge Match Ready!**\n${nhlEmojiMap[awayTeam]} <@${away.id}> **at** ${nhlEmojiMap[homeTeam]} <@${home.id}>`,
-          });
+          await challenge.channel.send(
+            `🏒 **Random Challenge Match Ready!**\n${nhlEmojiMap[awayTeam]} <@${away.id}> **at** ${nhlEmojiMap[homeTeam]} <@${home.id}>`
+          );
         } else if (challenge.type === 'fixed-teams') {
-          // Pass the original interaction for context
-          startTeamPickSession(interaction, challenge.challenger, challenge.opponent);
+          // Start team pick session using the channel
+          startTeamPickSession(challenge.channel, challenge.challenger, challenge.opponent);
         }
 
         activeChallenges.delete(challengeID);
@@ -87,43 +88,33 @@ async function handleChallenge(interaction) {
   const opponent = interaction.options.getUser('opponent');
 
   if (!opponent) {
-    return interaction.reply({
-      content: '⚠️ You must specify a user to challenge.',
-      ephemeral: true,
-    });
+    await interaction.reply({ content: '⚠️ You must specify a user to challenge.', ephemeral: true });
+    return;
   }
 
   if (opponent.id === challenger.id) {
-    return interaction.reply({
-      content: '⚠️ You cannot challenge yourself.',
-      ephemeral: true,
-    });
+    await interaction.reply({ content: '⚠️ You cannot challenge yourself.', ephemeral: true });
+    return;
   }
 
   const challengeID = generateChallengeID();
   const type =
-    interaction.commandName === 'challenge-opponent-random-teams'
-      ? 'random-teams'
-      : 'fixed-teams';
+    interaction.commandName === 'challenge-opponent-random-teams' ? 'random-teams' : 'fixed-teams';
 
   activeChallenges.set(challengeID, {
     challenger: { id: challenger.id, username: challenger.username },
     opponent: { id: opponent.id, username: opponent.username },
     type,
     status: 'pending',
+    channel: interaction.channel,
   });
 
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`accept_${challengeID}`)
-      .setLabel('✅ Accept')
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId(`decline_${challengeID}`)
-      .setLabel('❌ Decline')
-      .setStyle(ButtonStyle.Danger)
+    new ButtonBuilder().setCustomId(`accept_${challengeID}`).setLabel('✅ Accept').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`decline_${challengeID}`).setLabel('❌ Decline').setStyle(ButtonStyle.Danger)
   );
 
+  // Acknowledge command immediately to avoid "Unknown interaction" issues
   await interaction.reply({
     content: `🏒 <@${opponent.id}>, you have been challenged by <@${challenger.id}>! Do you accept?`,
     components: [row],
