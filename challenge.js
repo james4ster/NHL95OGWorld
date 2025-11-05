@@ -20,7 +20,11 @@ export function setupChallengeCommands(client) {
     if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
 
     // === /challenge-opponent-random-teams & /challenge-opponent-fixed-teams ===
-    if (interaction.isChatInputCommand() && (interaction.commandName === 'challenge-opponent-random-teams' || interaction.commandName === 'challenge-opponent-fixed-teams')) {
+    if (
+      interaction.isChatInputCommand() &&
+      (interaction.commandName === 'challenge-opponent-random-teams' ||
+        interaction.commandName === 'challenge-opponent-fixed-teams')
+    ) {
       await handleChallenge(interaction);
     }
 
@@ -33,14 +37,19 @@ export function setupChallengeCommands(client) {
         return;
       }
 
+      // Only the opponent can respond
       if (interaction.user.id !== challenge.opponent.id) {
         await interaction.reply({ content: '⚠️ Only the challenged player can respond.', ephemeral: true });
         return;
       }
 
+      // Handle ACCEPT
       if (action === 'accept') {
         challenge.status = 'accepted';
-        await interaction.update({ content: `✅ <@${challenge.opponent.id}> accepted the challenge from <@${challenge.challenger.id}>!`, components: [] });
+        await interaction.update({
+          content: `✅ <@${challenge.opponent.id}> accepted the challenge from <@${challenge.challenger.id}>!`,
+          components: [],
+        });
 
         // Handle based on challenge type
         if (challenge.type === 'random-teams') {
@@ -53,19 +62,23 @@ export function setupChallengeCommands(client) {
           const home = Math.random() < 0.5 ? challenge.challenger : challenge.opponent;
           const away = home === challenge.challenger ? challenge.opponent : challenge.challenger;
 
-          await challenge.channel.send(
-            `🏒 **Random Challenge Match Ready!**\n${nhlEmojiMap[awayTeam]} <@${away.id}> **at** ${nhlEmojiMap[homeTeam]} <@${home.id}>`
-          );
+          await interaction.followUp({
+            content: `🏒 **Random Challenge Match Ready!**\n${nhlEmojiMap[awayTeam]} <@${away.id}> **at** ${nhlEmojiMap[homeTeam]} <@${home.id}>`,
+          });
         } else if (challenge.type === 'fixed-teams') {
-          // Start team pick session
-          startTeamPickSession(challenge.channel, challenge.challenger, challenge.opponent);
+          // ✅ Fixed version: pass interaction instead of challenge.channel
+          await startTeamPickSession(interaction, challenge.challenger, challenge.opponent, true);
         }
 
         activeChallenges.delete(challengeID);
       }
 
+      // Handle DECLINE
       if (action === 'decline') {
-        await interaction.update({ content: `❌ <@${challenge.opponent.id}> declined the challenge from <@${challenge.challenger.id}>.`, components: [] });
+        await interaction.update({
+          content: `❌ <@${challenge.opponent.id}> declined the challenge from <@${challenge.challenger.id}>.`,
+          components: [],
+        });
         activeChallenges.delete(challengeID);
       }
     }
@@ -89,20 +102,32 @@ async function handleChallenge(interaction) {
   }
 
   const challengeID = generateChallengeID();
-  const type = interaction.commandName === 'challenge-opponent-random-teams' ? 'random-teams' : 'fixed-teams';
+  const type =
+    interaction.commandName === 'challenge-opponent-random-teams'
+      ? 'random-teams'
+      : 'fixed-teams';
 
   activeChallenges.set(challengeID, {
     challenger: { id: challenger.id, username: challenger.username },
     opponent: { id: opponent.id, username: opponent.username },
     type,
     status: 'pending',
-    channel: interaction.channel
+    channel: interaction.channel,
   });
 
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`accept_${challengeID}`).setLabel('✅ Accept').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`decline_${challengeID}`).setLabel('❌ Decline').setStyle(ButtonStyle.Danger)
+    new ButtonBuilder()
+      .setCustomId(`accept_${challengeID}`)
+      .setLabel('✅ Accept')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`decline_${challengeID}`)
+      .setLabel('❌ Decline')
+      .setStyle(ButtonStyle.Danger)
   );
 
-  await interaction.reply({ content: `🏒 <@${opponent.id}>, you have been challenged by <@${challenger.id}>! Do you accept?`, components: [row] });
+  await interaction.reply({
+    content: `🏒 <@${opponent.id}>, you have been challenged by <@${challenger.id}>! Do you accept?`,
+    components: [row],
+  });
 }
