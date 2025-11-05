@@ -15,7 +15,6 @@ import { handleGuildMemberAdd } from './welcome.js';
 import { google } from 'googleapis';
 import { setupQueueCommands } from './queue.js';
 import { setupChallengeCommands } from './challenge.js'; 
-import { setupTeamPickCommands } from './teamPick.js';
 
 // === Discord Bot Setup ===
 const client = new Client({
@@ -150,7 +149,7 @@ app.listen(PORT, () => {
 // === Register queue commands with the client ===
 setupQueueCommands(client);       // /play-random, /leave, /queue
 setupChallengeCommands(client);   // /challenge-opponent-random-teams, /challenge-opponent-fixed-teams
-setupTeamPickCommands(client);    // /pickteams (optional)
+
 
 // === Login to Discord ===
 (async () => {
