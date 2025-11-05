@@ -2,17 +2,30 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { nhlEmojiMap } from './nhlEmojiMap.js'; // your imported emoji map
 
-// Keep track of the queue
+// Keep track of queue with timestamps
 const queue = [];
+const QUEUE_TIMEOUT = 10 * 60 * 1000; // remove from queue after 10 minutes of inactivity
 
 // Helper to get NHL emoji
 function getNHLEmoji(teamCode) {
   return nhlEmojiMap[teamCode] || '🏒';
 }
 
+// Periodically clean up expired users
+setInterval(() => {
+  const now = Date.now();
+  for (let i = queue.length - 1; i >= 0; i--) {
+    if (now - queue[i].timestamp > QUEUE_TIMEOUT) {
+      const expiredUser = queue.splice(i, 1)[0];
+      if (expiredUser.channel) {
+        expiredUser.channel.send(`⏰ <@${expiredUser.id}> has been removed from the queue due to inactivity.`);
+      }
+    }
+  }
+}, 60 * 1000); // check every minute
+
 // Setup slash commands and interactions
 export function setupQueueCommands(client, testChannelId) {
- 
   client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -34,7 +47,14 @@ async function handlePlay(interaction) {
     return;
   }
 
-  queue.push(user);
+  // Add user with timestamp + channel ref
+  queue.push({
+    id: user.id,
+    username: user.username,
+    timestamp: Date.now(),
+    channel: interaction.channel
+  });
+
   await interaction.reply(`🟢 You’ve joined the queue! Waiting for another player... Currently in queue: ${queue.map(u => `<@${u.id}>`).join(', ')}`);
 
   // If two or more players, start a match
@@ -45,15 +65,18 @@ async function handlePlay(interaction) {
     const home = Math.random() < 0.5 ? player1 : player2;
     const away = home === player1 ? player2 : player1;
 
-    // Random teams
+    // Random teams (ensure unique)
     const teams = Object.keys(nhlEmojiMap);
     const homeTeam = teams[Math.floor(Math.random() * teams.length)];
-    const awayTeam = teams[Math.floor(Math.random() * teams.length)];
+    let awayTeam = teams[Math.floor(Math.random() * teams.length)];
+    while (awayTeam === homeTeam) {
+      awayTeam = teams[Math.floor(Math.random() * teams.length)];
+    }
 
     const homeEmoji = getNHLEmoji(homeTeam);
     const awayEmoji = getNHLEmoji(awayTeam);
 
-    // Send matchup directly to the channel
+    // Announce matchup
     await interaction.channel.send(
       `🏒 **Matchup Ready!**\n${awayEmoji} <@${away.id}> **at** ${homeEmoji} <@${home.id}>`
     );
