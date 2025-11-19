@@ -1,47 +1,45 @@
 // challenge.js
-import { Client, GatewayIntentBits } from 'discord.js';
+import { MessageFlags } from 'discord.js';
 import { startTeamPickSession } from './teamPick.js';
 
-export function setupChallengeCommands() {
-  const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
-  });
-
-  client.once('ready', () => {
-    console.log(`✅ Logged in as ${client.user.tag}`);
-  });
-
+export function setupChallengeCommands(client) {
   client.on('interactionCreate', async (interaction) => {
     try {
       if (!interaction.isChatInputCommand()) return;
 
-      const { commandName } = interaction;
-
-      if (commandName === 'challenge') {
+      if (interaction.commandName === 'challenge') {
         const challenger = interaction.user;
-        const opponentMention = interaction.options.getUser('opponent');
+        const opponent = interaction.options.getUser('opponent');
 
-        if (!opponentMention) {
-          await interaction.reply({ content: '⚠️ You must specify someone to challenge.', ephemeral: true });
+        if (!opponent) {
+          await interaction.reply({
+            content: '⚠️ You must specify someone to challenge.',
+            flags: MessageFlags.Ephemeral
+          });
           return;
         }
 
-        if (opponentMention.id === challenger.id) {
-          await interaction.reply({ content: '⚠️ You cannot challenge yourself.', ephemeral: true });
+        if (opponent.id === challenger.id) {
+          await interaction.reply({
+            content: '⚠️ You cannot challenge yourself.',
+            flags: MessageFlags.Ephemeral
+          });
           return;
         }
 
-        await interaction.reply({
-          content: `✅ <@${opponentMention.id}> accepted the challenge from <@${challenger.id}>!`,
-        });
+        // Acknowledge the command quickly
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-        // Pass channel and users
-        startTeamPickSession(interaction.channel, challenger, opponentMention);
+        // Now safe to do async work if needed
+        await interaction.editReply(
+          `🏒 Challenge created!\n<@${challenger.id}> vs <@${opponent.id}>`
+        );
+
+        // Start the team pick flow
+        startTeamPickSession(interaction.channel, challenger, opponent);
       }
     } catch (err) {
       console.error('Interaction error:', err);
     }
   });
-
-  client.login(process.env.BOT_TOKEN);
 }
