@@ -1,10 +1,10 @@
 /* 
 Main bot file for NHL95OGBot
  - Discord bot setup
- - Capture new Discord joiners automatically when the join the discord server - write to PlayerMaster tab
+ - Capture new Discord joiners automatically when they join the server
  - Assigns default ELO (1500) to new players in RawStandings
  - Assigns default role of general-player to new players
- */
+*/
 
 // === Imports ===
 console.log('📄 SPREADSHEET_ID env var:', process.env.SPREADSHEET_ID);
@@ -13,9 +13,7 @@ import { Client, GatewayIntentBits } from 'discord.js';
 import express from 'express';
 import { handleGuildMemberAdd } from './welcome.js';
 import { google } from 'googleapis';
-import { setupQueueCommands } from './queue.js';
-import { setupChallengeCommands } from './challenge.js'; 
-
+import { setupQueueCommands } from './queue.js'; // only queue/play commands
 
 // === Discord Bot Setup ===
 const client = new Client({
@@ -51,9 +49,6 @@ async function writePlayerToSheet(discordId, username, displayName, joinDate) {
   console.log(`✅ Added ${username} to Players tab`);
 }
 
-
-// === Event listener for new members ===
-// === When new member joins the server, write to PlayerMaster tab ===
 // === Event listener for new members ===
 client.on('guildMemberAdd', async (member) => {
   const discordId = member.id;
@@ -69,7 +64,7 @@ client.on('guildMemberAdd', async (member) => {
     });
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // === Fetch existing Discord IDs in PlayerMaster ===
+    // Fetch existing Discord IDs in PlayerMaster
     const playerRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SPREADSHEET_ID,
       range: 'PlayerMaster!A:A',
@@ -79,7 +74,7 @@ client.on('guildMemberAdd', async (member) => {
     if (existingIds.includes(discordId)) {
       console.log(`ℹ️ ${username} already exists in PlayerMaster, skipping insert.`);
     } else {
-      // === Add new player ===
+      // Add new player
       await sheets.spreadsheets.values.append({
         spreadsheetId: process.env.SPREADSHEET_ID,
         range: 'PlayerMaster!A:E',
@@ -89,7 +84,7 @@ client.on('guildMemberAdd', async (member) => {
       });
       console.log(`✅ Added ${username} to PlayerMaster`);
 
-      // === Fetch RawStandings once ===
+      // Fetch RawStandings once
       const rawRes = await sheets.spreadsheets.values.get({
         spreadsheetId: process.env.SPREADSHEET_ID,
         range: 'RawStandings!A:AO', // include AM:AO
@@ -99,9 +94,6 @@ client.on('guildMemberAdd', async (member) => {
       const rowIndex = data.findIndex(row => row[0] === discordId);
       if (rowIndex !== -1) {
         const currentElo = data[rowIndex][38]; // Column AM
-        const highestElo = data[rowIndex][39]; // Column AN
-        const lowestElo = data[rowIndex][40];  // Column AO
-
         if (!currentElo) {
           await sheets.spreadsheets.values.update({
             spreadsheetId: process.env.SPREADSHEET_ID,
@@ -109,16 +101,12 @@ client.on('guildMemberAdd', async (member) => {
             valueInputOption: 'USER_ENTERED',
             requestBody: { values: [[1500, 1500, 1500]] },
           });
-          console.log(`✅ Set default ELO = 1500 (current, highest, lowest) for ${username}`);
-        } else {
-          console.log(`ℹ️ ${username} already has an ELO: ${currentElo} (High: ${highestElo}, Low: ${lowestElo})`);
+          console.log(`✅ Set default ELO = 1500 for ${username}`);
         }
-      } else {
-        console.log(`⚠️ Discord ID ${discordId} not found in RawStandings`);
       }
     }
 
-    // === Assign default role ===
+    // Assign default role
     const roleId = '1433493333149352099';
     const role = member.guild.roles.cache.get(roleId);
     if (role) {
@@ -131,13 +119,10 @@ client.on('guildMemberAdd', async (member) => {
   }
 });
 
-
-
 // === Express Server ===
 const app = express();
 app.use(express.json());
 
-// Health check endpoint
 app.get('/', (req, res) => {
   res.send('🟢 NHL95OGBot is alive and ready to serve!');
 });
@@ -147,10 +132,8 @@ app.listen(PORT, () => {
   console.log(`🌐 Web server running on port ${PORT}`);
 });
 
-// === Register queue commands with the client ===
-setupQueueCommands(client);       // /play-random, /leave, /queue
-setupChallengeCommands(client);   // /challenge-opponent-random-teams, /challenge-opponent-fixed-teams
-
+// === Register queue/play commands only ===
+setupQueueCommands(client); // /play, /queue
 
 // === Login to Discord ===
 (async () => {
