@@ -100,22 +100,22 @@ async function handleLeave(interaction) {
   const index = queue.findIndex(p => p.id === user.id);
 
   if (index === -1) {
-    await interaction.reply({ content: `⚠️ You are not in the queue, <@${user.id}>.`, ephemeral: true });
+    await interaction.editReply({ content: `⚠️ You are not in the queue, <@${user.id}>.`, ephemeral: true });
     return;
   }
 
   queue.splice(index, 1);
-  await interaction.reply(`🛑 You have left the queue, <@${user.id}>.`);
+  await interaction.editReply(`🛑 You have left the queue, <@${user.id}>.`);
 }
 
 // ============================================================
 // /queue command handler
 async function handleQueue(interaction) {
   if (queue.length === 0) {
-    await interaction.reply('🚫 The queue is currently empty.');
+    await interaction.editReply('🚫 The queue is currently empty.');
     return;
   }
 
   const queueList = queue.map(u => `<@${u.id}>`).join(', ');
-  await interaction.reply(`📋 Current queue (${queue.length}): ${queueList}`);
+  await interaction.editReply(`📋 Current queue (${queue.length}): ${queueList}`);
 }
