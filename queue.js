@@ -47,6 +47,7 @@ export function setupQueueCommands(client) {
 // ============================================================
 // /play-random command handler
 async function handlePlayRandom(interaction) {
+  // Defer reply because we may do async processing (waiting for another player)
   await interaction.deferReply({ ephemeral: true });
 
   const user = interaction.user;
@@ -99,23 +100,40 @@ async function handleLeave(interaction) {
   const user = interaction.user;
   const index = queue.findIndex(p => p.id === user.id);
 
+  // User not in queue
   if (index === -1) {
-    await interaction.editReply({ content: `⚠️ You are not in the queue, <@${user.id}>.`, ephemeral: true });
-    return;
+    // Reply immediately (ephemeral)
+    return await interaction.reply({
+      content: `⚠️ You are not in the queue, <@${user.id}>.`,
+      ephemeral: true
+    });
   }
 
+  // Remove user from queue
   queue.splice(index, 1);
-  await interaction.editReply(`🛑 You have left the queue, <@${user.id}>.`);
+
+  // Confirm leave
+  await interaction.reply({
+    content: `🛑 You have left the queue, <@${user.id}>.`,
+    ephemeral: true
+  });
 }
 
 // ============================================================
 // /queue command handler
 async function handleQueue(interaction) {
+  // Queue empty
   if (queue.length === 0) {
-    await interaction.editReply('🚫 The queue is currently empty.');
-    return;
+    return await interaction.reply({
+      content: '🚫 The queue is currently empty.',
+      ephemeral: true
+    });
   }
 
+  // List users in queue
   const queueList = queue.map(u => `<@${u.id}>`).join(', ');
-  await interaction.editReply(`📋 Current queue (${queue.length}): ${queueList}`);
+  await interaction.reply({
+    content: `📋 Current queue (${queue.length}): ${queueList}`,
+    ephemeral: true
+  });
 }

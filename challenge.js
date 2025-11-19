@@ -1,41 +1,42 @@
 // challenge.js
-import { MessageFlags } from 'discord.js';
 import { startTeamPickSession } from './teamPick.js';
 
+// ============================================================
+// Setup /challenge command interaction
 export function setupChallengeCommands(client) {
   client.on('interactionCreate', async (interaction) => {
     try {
       if (!interaction.isChatInputCommand()) return;
 
+      // === /challenge Command ===
       if (interaction.commandName === 'challenge') {
         const challenger = interaction.user;
         const opponent = interaction.options.getUser('opponent');
 
+        // --- Validate opponent ---
         if (!opponent) {
-          await interaction.reply({
+          return await interaction.reply({
             content: '⚠️ You must specify someone to challenge.',
-            flags: MessageFlags.Ephemeral
+            ephemeral: true
           });
-          return;
         }
 
         if (opponent.id === challenger.id) {
-          await interaction.reply({
+          return await interaction.reply({
             content: '⚠️ You cannot challenge yourself.',
-            flags: MessageFlags.Ephemeral
+            ephemeral: true
           });
-          return;
         }
 
-        // Acknowledge the command quickly
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        // --- Defer reply because we will do async work ---
+        await interaction.deferReply({ ephemeral: true });
 
-        // Now safe to do async work if needed
+        // --- Safe to do async operations now ---
         await interaction.editReply(
           `🏒 Challenge created!\n<@${challenger.id}> vs <@${opponent.id}>`
         );
 
-        // Start the team pick flow
+        // --- Start the team pick flow ---
         startTeamPickSession(interaction.channel, challenger, opponent);
       }
     } catch (err) {
