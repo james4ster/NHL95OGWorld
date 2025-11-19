@@ -1,4 +1,5 @@
 // queue.js
+import { SlashCommandBuilder } from 'discord.js';
 import { nhlEmojiMap } from './nhlEmojiMap.js'; // your imported emoji map
 
 // ============================================================
@@ -18,7 +19,9 @@ setInterval(() => {
     if (now - queue[i].timestamp > QUEUE_TIMEOUT) {
       const expiredUser = queue.splice(i, 1)[0];
       if (expiredUser.channel) {
-        expiredUser.channel.send(`⏰ <@${expiredUser.id}> has been removed from the queue due to inactivity.`);
+        expiredUser.channel.send(
+          `⏰ <@${expiredUser.id}> has been removed from the queue due to inactivity.`
+        ).catch(console.error);
       }
     }
   }
@@ -32,29 +35,40 @@ export function setupQueueCommands(client) {
 
     const { commandName } = interaction;
 
-    // === /play-random Command ===
-    if (commandName === 'play-random') await handlePlayRandom(interaction);
+    try {
+      // === /play-random Command ===
+      if (commandName === 'play-random') await handlePlayRandom(interaction);
 
-    // === /leave Command ===
-    if (commandName === 'leave') await handleLeave(interaction);
+      // === /leave Command ===
+      if (commandName === 'leave') await handleLeave(interaction);
 
-    // === /queue Command ===
-    if (commandName === 'queue') await handleQueue(interaction);
+      // === /queue Command ===
+      if (commandName === 'queue') await handleQueue(interaction);
+
+    } catch (err) {
+      console.error(`Error handling command ${commandName}:`, err);
+
+      // Only reply if interaction not already acknowledged
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ Something went wrong.', ephemeral: true }).catch(console.error);
+      }
+    }
   });
 }
 
 // ============================================================
 // /play-random command handler
 async function handlePlayRandom(interaction) {
-  // deferReply because this command might do async work (waiting for match)
-  await interaction.deferReply({ ephemeral: true });
+  // defer because matchmaking might take >1s
+  await interaction.deferReply({ ephemeral: true }).catch(console.error);
 
   const user = interaction.user;
 
   // Already in queue
   if (queue.find(p => p.id === user.id)) {
-    await interaction.editReply({ content: `⚠️ You're already in the queue, <@${user.id}>!` });
-    return;
+    return await interaction.editReply({
+      content: `⚠️ You're already in the queue, <@${user.id}>!`
+    }).catch(console.error);
   }
 
   // Add user with timestamp + channel reference
@@ -67,7 +81,7 @@ async function handlePlayRandom(interaction) {
 
   await interaction.editReply({
     content: `🟢 You’ve joined the random queue! Waiting for another player... Currently in queue: ${queue.map(u => `<@${u.id}>`).join(', ')}`
-  });
+  }).catch(console.error);
 
   // If two or more players, start a match
   if (queue.length >= 2) {
@@ -87,9 +101,9 @@ async function handlePlayRandom(interaction) {
     const awayEmoji = getNHLEmoji(awayTeam);
 
     // Announce matchup directly to the channel
-    await interaction.channel.send(
+    interaction.channel.send(
       `🏒 **Random Match Ready!**\n${awayEmoji} <@${away.id}> **at** ${homeEmoji} <@${home.id}>`
-    );
+    ).catch(console.error);
   }
 }
 
@@ -99,37 +113,33 @@ async function handleLeave(interaction) {
   const user = interaction.user;
   const index = queue.findIndex(p => p.id === user.id);
 
-  // --- Not in queue ---
   if (index === -1) {
     return await interaction.reply({
       content: `⚠️ You are not in the queue, <@${user.id}>.`,
       ephemeral: true
-    });
+    }).catch(console.error);
   }
 
-  // --- Remove from queue ---
   queue.splice(index, 1);
   await interaction.reply({
     content: `🛑 You have left the queue, <@${user.id}>.`,
     ephemeral: true
-  });
+  }).catch(console.error);
 }
 
 // ============================================================
 // /queue command handler
 async function handleQueue(interaction) {
-  // --- Empty queue ---
   if (queue.length === 0) {
     return await interaction.reply({
       content: '🚫 The queue is currently empty.',
       ephemeral: true
-    });
+    }).catch(console.error);
   }
 
-  // --- Show current queue ---
   const queueList = queue.map(u => `<@${u.id}>`).join(', ');
   await interaction.reply({
     content: `📋 Current queue (${queue.length}): ${queueList}`,
     ephemeral: true
-  });
+  }).catch(console.error);
 }
