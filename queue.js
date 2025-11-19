@@ -1,5 +1,4 @@
 // queue.js
-import { SlashCommandBuilder } from 'discord.js';
 import { nhlEmojiMap } from './nhlEmojiMap.js'; // your imported emoji map
 
 // ============================================================
@@ -47,7 +46,7 @@ export function setupQueueCommands(client) {
 // ============================================================
 // /play-random command handler
 async function handlePlayRandom(interaction) {
-  // Defer reply because we may do async processing (waiting for another player)
+  // deferReply because this command might do async work (waiting for match)
   await interaction.deferReply({ ephemeral: true });
 
   const user = interaction.user;
@@ -100,19 +99,16 @@ async function handleLeave(interaction) {
   const user = interaction.user;
   const index = queue.findIndex(p => p.id === user.id);
 
-  // User not in queue
+  // --- Not in queue ---
   if (index === -1) {
-    // Reply immediately (ephemeral)
     return await interaction.reply({
       content: `⚠️ You are not in the queue, <@${user.id}>.`,
       ephemeral: true
     });
   }
 
-  // Remove user from queue
+  // --- Remove from queue ---
   queue.splice(index, 1);
-
-  // Confirm leave
   await interaction.reply({
     content: `🛑 You have left the queue, <@${user.id}>.`,
     ephemeral: true
@@ -122,7 +118,7 @@ async function handleLeave(interaction) {
 // ============================================================
 // /queue command handler
 async function handleQueue(interaction) {
-  // Queue empty
+  // --- Empty queue ---
   if (queue.length === 0) {
     return await interaction.reply({
       content: '🚫 The queue is currently empty.',
@@ -130,7 +126,7 @@ async function handleQueue(interaction) {
     });
   }
 
-  // List users in queue
+  // --- Show current queue ---
   const queueList = queue.map(u => `<@${u.id}>`).join(', ');
   await interaction.reply({
     content: `📋 Current queue (${queue.length}): ${queueList}`,

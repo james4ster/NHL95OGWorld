@@ -37,10 +37,23 @@ export function setupChallengeCommands(client) {
         );
 
         // --- Start the team pick flow ---
+        // Passing the channel and both users
         startTeamPickSession(interaction.channel, challenger, opponent);
       }
     } catch (err) {
       console.error('Interaction error:', err);
+
+      // --- Try to reply if interaction was never acknowledged ---
+      if (interaction && !interaction.replied) {
+        try {
+          await interaction.reply({
+            content: '❌ Something went wrong while creating the challenge.',
+            ephemeral: true
+          });
+        } catch (e) {
+          console.error('Failed to send fallback reply:', e);
+        }
+      }
     }
   });
 }
