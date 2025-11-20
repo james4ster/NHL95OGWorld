@@ -1,13 +1,14 @@
 // queue.js
-// this is the working version for the queue window and join/leave buttons - ELO works
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import { google } from 'googleapis';
+import { getNHLEmojiMap } from './nhlEmojiMap.js'; // Use your emoji map
 
 // In-memory queue
 let queue = [];
 
-// Queue channel ID
-const QUEUE_CHANNEL_ID = '1441041038931132537';
+// Queue & rated games channels
+const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
+const RATED_GAMES_CHANNEL_ID = process.env.RATED_GAMES_CHANNEL_ID;
 
 // Build the buttons for join/leave
 function buildButtons() {
@@ -24,9 +25,7 @@ function buildButtons() {
 }
 
 // Build embed showing current queue
-// NOTE: async because we fetch ELOs from Google Sheets to display current values
 async function buildQueueEmbed(client) {
-  // If queue empty, quick return
   if (queue.length === 0) {
     return new EmbedBuilder()
       .setTitle('🎮 NHL ’95 Game Queue')
@@ -35,13 +34,9 @@ async function buildQueueEmbed(client) {
       .setTimestamp();
   }
 
-  // ---------------------------
   // Fetch mappings from Sheets
-  // - PlayerMaster: map discordId -> playerName (PlayerMaster col C)
-  // - RawStandings: map playerName -> elo (RawStandings col AM, index 38)
-  // ---------------------------
-  let idToPlayerName = {};   // discordId -> playerName
-  let playerNameToElo = {};  // playerName -> elo
+  let idToPlayerName = {};
+  let playerNameToElo = {};
 
   try {
     const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
@@ -51,28 +46,25 @@ async function buildQueueEmbed(client) {
     });
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // PlayerMaster: read A:C (Discord ID, username, playerName) - we want A -> C
     const pmRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SPREADSHEET_ID,
       range: 'PlayerMaster!A:C',
     });
     const pmData = pmRes.data.values || [];
-    // each row: [discordId, username, playerName]
     for (const row of pmData) {
       const discordId = row[0];
-      const playerName = row[2]; // PlayerMaster column C
+      const playerName = row[2];
       if (discordId && playerName) idToPlayerName[discordId] = playerName;
     }
 
-    // RawStandings: read A:AM (we need column A (playerName) and AM index 38)
     const rsRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SPREADSHEET_ID,
       range: 'RawStandings!A:AM',
     });
     const rsData = rsRes.data.values || [];
     for (const row of rsData) {
-      const playerName = row[0]; // RawStandings column A
-      const eloRaw = row[38];    // RawStandings column AM (0-based index 38)
+      const playerName = row[0];
+      const eloRaw = row[38];
       const elo = eloRaw ? parseInt(eloRaw, 10) : 1500;
       if (playerName) playerNameToElo[playerName] = elo;
     }
@@ -80,15 +72,11 @@ async function buildQueueEmbed(client) {
     console.error('❌ Error fetching sheets data for ELO mapping:', err);
   }
 
-  // Build list, resolving each queued user's playerName and elo
   const list = queue
     .map((u, i) => {
-      // u may be { id, name, elo } from older entries — prefer authoritative mapping
       const discordId = u.id;
       const playerName = idToPlayerName[discordId] || u.name || `<@${discordId}>`;
       const elo = playerNameToElo[playerName] || (u.elo || 1500);
-      // Show the playerName (if it's a plain string) but still mention the Discord user for clarity
-      // If playerName looks like a Discord mention already, keep it
       const displayName = playerName.startsWith('<@') ? playerName : playerName;
       return `${i + 1}. ${displayName} [${elo}]`;
     })
@@ -104,7 +92,6 @@ async function buildQueueEmbed(client) {
 // Send or update the persistent queue message
 async function sendOrUpdateQueueMessage(client) {
   if (!client.queueMessageId) {
-    // Message ID missing → send a new persistent queue window
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const embed = await buildQueueEmbed(client);
     const msg = await channel.send({
@@ -116,7 +103,6 @@ async function sendOrUpdateQueueMessage(client) {
     return;
   }
 
-  // Update the existing queue message
   try {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const msg = await channel.messages.fetch(client.queueMessageId);
@@ -124,37 +110,27 @@ async function sendOrUpdateQueueMessage(client) {
     await msg.edit({ embeds: [embed], components: [buildButtons()] });
   } catch (err) {
     console.log('❌ Could not edit queue message. Recreating single persistent window.');
-
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-
-    // Delete ALL messages to guarantee only one window exists
     const msgs = await channel.messages.fetch({ limit: 50 });
     for (const m of msgs.values()) {
       try { await m.delete(); } catch {}
     }
-
-    // Create ONE fresh queue window
     const embed = await buildQueueEmbed(client);
     const newMsg = await channel.send({
       content: '**NHL ’95 Game Queue**',
       embeds: [embed],
       components: [buildButtons()],
     });
-
-    // Save the new ID
     client.queueMessageId = newMsg.id;
   }
 }
 
 // Handle button interactions
-// Handle button interactions
 async function handleInteraction(interaction, client) {
   if (!interaction.isButton()) return;
-
   const userId = interaction.user.id;
 
   try {
-    // --- Google Sheets setup ---
     const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
     const auth = new google.auth.GoogleAuth({
       credentials,
@@ -162,7 +138,6 @@ async function handleInteraction(interaction, client) {
     });
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // Fetch PlayerMaster and RawStandings
     const [pmRes, rsRes] = await Promise.all([
       sheets.spreadsheets.values.get({
         spreadsheetId: process.env.SPREADSHEET_ID,
@@ -177,29 +152,48 @@ async function handleInteraction(interaction, client) {
     const playerMasterData = pmRes.data.values || [];
     const rawStandingsData = rsRes.data.values || [];
 
-    // --- Map Discord ID → Nickname (RawStandings column A) ---
-    const pmRow = playerMasterData.find(r => r[1] === userId); // column B = Discord ID
-    const playerNickname = pmRow ? pmRow[2] : interaction.user.username; // column C = Nickname
+    const pmRow = playerMasterData.find(r => r[1] === userId); // B = Discord ID
+    const playerNickname = pmRow ? pmRow[2] : interaction.user.username; // C = Nickname
 
-    // --- Find ELO in RawStandings ---
-    const rsRow = rawStandingsData.find(r => r[0] === playerNickname); // column A = Nickname
-    const elo = rsRow ? rsRow[38] || 1500 : 1500; // column AM = index 38
-
+    const rsRow = rawStandingsData.find(r => r[0] === playerNickname);
+    const elo = rsRow ? rsRow[38] || 1500 : 1500;
     const name = playerNickname;
 
-    // --- Update in-memory queue ---
     if (interaction.customId === 'join_queue') {
       if (!queue.find(u => u.id === userId)) queue.push({ id: userId, name, elo });
     } else if (interaction.customId === 'leave_queue') {
       queue = queue.filter(u => u.id !== userId);
     }
 
-    // --- Defer interaction update ---
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferUpdate();
     }
 
-    // --- Update persistent queue window ---
+    // --- Check for matchup ---
+    while (queue.length >= 2) {
+      const [player1, player2] = queue.splice(0, 2);
+
+      // Random NHL teams from emoji map
+      const nhlEmojiMap = getNHLEmojiMap();
+      const teams = Object.keys(nhlEmojiMap);
+      let homeTeam = teams[Math.floor(Math.random() * teams.length)];
+      let awayTeam = teams[Math.floor(Math.random() * teams.length)];
+      while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
+
+      // Randomly pick home/away
+      const homePlayerFirst = Math.random() < 0.5;
+      const homePlayer = homePlayerFirst ? player1 : player2;
+      const awayPlayer = homePlayerFirst ? player2 : player1;
+
+      // Send matchup message
+      const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
+      await ratedChannel.send(
+        `🎮 **Rated Game Matchup!**\n` +
+        `<@${homePlayer.id}> [${homePlayer.elo}] (${nhlEmojiMap[homeTeam]}) **vs** <@${awayPlayer.id}> [${awayPlayer.elo}] (${nhlEmojiMap[awayTeam]})\n` +
+        `Home: <@${homePlayer.id}> | Away: <@${awayPlayer.id}>`
+      );
+    }
+
     await sendOrUpdateQueueMessage(client);
 
   } catch (err) {
@@ -207,8 +201,7 @@ async function handleInteraction(interaction, client) {
   }
 }
 
-
-// Reset queue channel: delete old messages, flush queue, send fresh persistent message
+// Reset queue channel
 async function resetQueueChannel(client) {
   const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
   const messages = await channel.messages.fetch({ limit: 50 });
@@ -217,7 +210,6 @@ async function resetQueueChannel(client) {
   }
   queue = [];
   console.log('🧹 Queue channel reset; all old messages removed');
-
   await sendOrUpdateQueueMessage(client);
 }
 
