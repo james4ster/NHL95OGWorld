@@ -7,11 +7,12 @@ let queueMessage;
 
 // === Build buttons for persistent message ===
 function getQueueButtons() {
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('join').setLabel('Join Queue').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('leave').setLabel('Leave Queue').setStyle(ButtonStyle.Danger)
-  );
-  return [row];
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('join').setLabel('Join Queue').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('leave').setLabel('Leave Queue').setStyle(ButtonStyle.Danger)
+    )
+  ];
 }
 
 // === Reset queue channel on restart ===
@@ -19,26 +20,23 @@ export async function resetQueueChannel(client) {
   const channel = await client.channels.fetch(process.env.QUEUE_CHANNEL_ID);
   if (!channel) return;
 
-  // Fetch existing messages
+  // Delete any old messages
   const messages = await channel.messages.fetch({ limit: 50 });
-
-  // Delete old messages
   await Promise.all(messages.map(msg => msg.delete()));
 
+  // Queue starts empty on restart
   queue = [];
 
-  // Send persistent queue message with buttons
+  // Send persistent queue message (empty list, with buttons)
   queueMessage = await channel.send({
-    content: '🎯 Queue is empty. Click "Join Queue" to enter!',
+    content: queue.map(p => `${p.name} [${p.elo}]`).join('\n') || '', // empty string if queue is empty
     components: getQueueButtons()
   });
 }
 
 // === Send/update persistent queue message ===
 export async function sendOrUpdateQueueMessage(channel) {
-  const content = queue.length
-    ? `🎯 Queue:\n${queue.map(p => `${p.name} [${p.elo}]`).join('\n')}`
-    : '🎯 Queue is empty. Click "Join Queue" to enter!';
+  const content = queue.map(p => `${p.name} [${p.elo}]`).join('\n') || ''; // empty string if queue empty
 
   if (queueMessage) {
     await queueMessage.edit({ content, components: getQueueButtons() });
@@ -55,6 +53,7 @@ export async function handleInteraction(interaction, client) {
   const discordId = interaction.user.id;
 
   try {
+    // Fetch ELO from RawStandings
     const sheets = google.sheets({ version: 'v4', auth: new google.auth.GoogleAuth({
       credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),
       scopes: ['https://www.googleapis.com/auth/spreadsheets']
@@ -106,7 +105,7 @@ export async function tryMatchup(client, ratedChannelId) {
   const row2 = data.find(r => r[0] === player2.id);
 
   const nhlMap = getNHLEmojiMap();
-  const team1 = row1 ? nhlMap[row1[3]] : '🏒'; 
+  const team1 = row1 ? nhlMap[row1[3]] : '🏒';
   const team2 = row2 ? nhlMap[row2[3]] : '🏒';
 
   const homeFirst = Math.random() < 0.5;
