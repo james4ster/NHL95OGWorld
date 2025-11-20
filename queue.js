@@ -2,6 +2,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'disc
 import { google } from 'googleapis';
 
 // In-memory queue
+// debugging
 let queue = [];
 
 // Queue channel ID
