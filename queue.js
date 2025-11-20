@@ -2,7 +2,6 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'disc
 import { google } from 'googleapis';
 
 // In-memory queue
-// debugging
 let queue = [];
 
 // Queue channel ID
@@ -38,7 +37,6 @@ function buildQueueEmbed() {
 // Send or update the persistent queue message
 async function sendOrUpdateQueueMessage(client) {
   if (!client.queueMessageId) {
-    // Message ID missing → send a new persistent queue window
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const msg = await channel.send({
       content: '**NHL ’95 Game Queue**',
@@ -49,30 +47,32 @@ async function sendOrUpdateQueueMessage(client) {
     return;
   }
 
-  // Update the existing queue message
   try {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const msg = await channel.messages.fetch(client.queueMessageId);
-    await msg.edit({ embeds: [buildQueueEmbed()], components: [buildButtons()] });
+    await msg.edit({
+      embeds: [buildQueueEmbed()],
+      components: [buildButtons()],
+    });
+
   } catch (err) {
     console.log('❌ Could not edit queue message. Recreating single persistent window.');
 
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
 
-    // Delete ALL messages to guarantee only one window exists
+    // Delete EVERY message in the channel → guaranteed single window
     const msgs = await channel.messages.fetch({ limit: 50 });
     for (const m of msgs.values()) {
       try { await m.delete(); } catch {}
     }
 
-    // Create ONE fresh queue window
+    // Create new single queue window
     const newMsg = await channel.send({
       content: '**NHL ’95 Game Queue**',
       embeds: [buildQueueEmbed()],
       components: [buildButtons()],
     });
 
-    // Save the new ID
     client.queueMessageId = newMsg.id;
   }
 }
@@ -84,7 +84,7 @@ async function handleInteraction(interaction, client) {
   const userId = interaction.user.id;
 
   try {
-    // Fetch current ELO from RawStandings
+    // Fetch ELO from RawStandings
     const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
     const auth = new google.auth.GoogleAuth({
       credentials,
@@ -98,13 +98,14 @@ async function handleInteraction(interaction, client) {
     });
     const data = rawRes.data.values || [];
 
-    // Map discordId → username + ELO
     const row = data.find(r => r[0] === userId);
     const elo = row ? row[38] || 1500 : 1500;
     const name = row ? row[1] || interaction.user.username : interaction.user.username;
 
     if (interaction.customId === 'join_queue') {
-      if (!queue.find(u => u.id === userId)) queue.push({ id: userId, name, elo });
+      if (!queue.find(u => u.id === userId)) {
+        queue.push({ id: userId, name, elo });
+      }
     } else if (interaction.customId === 'leave_queue') {
       queue = queue.filter(u => u.id !== userId);
     }
@@ -121,9 +122,11 @@ async function handleInteraction(interaction, client) {
 async function resetQueueChannel(client) {
   const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
   const messages = await channel.messages.fetch({ limit: 50 });
+
   for (const msg of messages.values()) {
     await msg.delete();
   }
+
   queue = [];
   console.log('🧹 Queue channel reset; all old messages removed');
 
