@@ -55,9 +55,25 @@ async function sendOrUpdateQueueMessage(client) {
     const msg = await channel.messages.fetch(client.queueMessageId);
     await msg.edit({ embeds: [buildQueueEmbed()], components: [buildButtons()] });
   } catch (err) {
-    console.log('❌ Error editing queue message, resending');
-    client.queueMessageId = null;
-    await sendOrUpdateQueueMessage(client); // retry with new message
+    console.log('❌ Could not edit queue message. Recreating single persistent window.');
+
+    const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+
+    // Delete ALL messages to guarantee only one window exists
+    const msgs = await channel.messages.fetch({ limit: 50 });
+    for (const m of msgs.values()) {
+      try { await m.delete(); } catch {}
+    }
+
+    // Create ONE fresh queue window
+    const newMsg = await channel.send({
+      content: '**NHL ’95 Game Queue**',
+      embeds: [buildQueueEmbed()],
+      components: [buildButtons()],
+    });
+
+    // Save the new ID
+    client.queueMessageId = newMsg.id;
   }
 }
 
