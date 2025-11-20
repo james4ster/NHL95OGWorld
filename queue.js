@@ -163,18 +163,16 @@ async function sendOrUpdateQueueMessage(client) {
 // Handle button interactions
 async function handleInteraction(interaction, client) {
   if (!interaction.isButton()) return;
+
   const userId = interaction.user.id;
 
   try {
-    // --- Optional fix for 40060 error ---
-    try {
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate();
-      }
-    } catch (err) {
-      if (err.code !== 40060) console.error(err);
+    // ---- Defer immediately to prevent Unknown interaction ----
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate();
     }
 
+    // --- Fetch player info from Sheets ---
     const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
     const auth = new google.auth.GoogleAuth({
       credentials,
@@ -197,92 +195,57 @@ async function handleInteraction(interaction, client) {
     const rawStandingsData = rsRes.data.values || [];
 
     const pmRow = playerMasterData.find(r => r[1] === userId); // B = Discord ID
-    const playerNickname = pmRow ? pmRow[2] : interaction.user.username; // C = Nickname
+    const playerNickname = pmRow ? pmRow[2] : interaction.user.username;
 
     const rsRow = rawStandingsData.find(r => r[0] === playerNickname);
     const elo = rsRow ? rsRow[38] || 1500 : 1500;
     const name = playerNickname;
 
-  if (interaction.customId === 'join_queue') {
-    if (!queue.find(u => u.id === userId)) {
-      queue.push({ 
-        id: userId, 
-        name, 
-        elo, 
-        status: 'waiting' // new field for pending acknowledgment system
-      });
+    // --- Handle join/leave queue ---
+    if (interaction.customId === 'join_queue') {
+      if (!queue.find(u => u.id === userId)) {
+        queue.push({
+          id: userId,
+          name,
+          elo,
+          status: 'waiting', // default status for pending acknowledgment
+        });
+      }
+    } else if (interaction.customId === 'leave_queue') {
+      queue = queue.filter(u => u.id !== userId);
     }
-  } else if (interaction.customId === 'leave_queue') {
-    queue = queue.filter(u => u.id !== userId);
-  }
 
-    // --- Check for matchup ---
+    // --- Check for matchup (same as before) ---
     while (queue.length >= 2) {
       const [player1, player2] = queue.splice(0, 2);
 
-      // Fetch ELO mapping
-      let idToPlayerName = {};
-      let playerNameToElo = {};
-      try {
-        const [pmRes2, rsRes2] = await Promise.all([
-          sheets.spreadsheets.values.get({
-            spreadsheetId: process.env.SPREADSHEET_ID,
-            range: 'PlayerMaster!A:C',
-          }),
-          sheets.spreadsheets.values.get({
-            spreadsheetId: process.env.SPREADSHEET_ID,
-            range: 'RawStandings!A:AM',
-          }),
-        ]);
-
-        const pmData2 = pmRes2.data.values || [];
-        const rsData2 = rsRes2.data.values || [];
-
-        for (const row of pmData2) {
-          const discordId = row[0];
-          const playerName = row[2];
-          if (discordId && playerName) idToPlayerName[discordId] = playerName;
-        }
-        for (const row of rsData2) {
-          const playerName = row[0];
-          const eloRaw = row[38];
-          const elo = eloRaw ? parseInt(eloRaw, 10) : 1500;
-          if (playerName) playerNameToElo[playerName] = elo;
-        }
-      } catch (err) {
-        console.error('❌ Error fetching sheets data for ELO mapping:', err);
-      }
-
+      // Randomly assign home/away
       const nhlEmojiMap = getNHLEmojiMap();
       const teams = Object.keys(nhlEmojiMap);
-
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
       let awayTeam = teams[Math.floor(Math.random() * teams.length)];
       while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
 
-      // Randomly pick home/away
       const homePlayerFirst = Math.random() < 0.5;
       const homePlayer = homePlayerFirst ? player1 : player2;
       const awayPlayer = homePlayerFirst ? player2 : player1;
 
-      // Lookup ELO
-      const homeElo = playerNameToElo[idToPlayerName[homePlayer.id]] || homePlayer.elo || 1500;
-      const awayElo = playerNameToElo[idToPlayerName[awayPlayer.id]] || awayPlayer.elo || 1500;
-
       const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
       await ratedChannel.send(
         `🎮 Rated Game Matchup!\n` +
-        `Away: <@${awayPlayer.id}> [${awayElo}]: ${nhlEmojiMap[awayTeam]}\n` +
-        `Home: <@${homePlayer.id}> [${homeElo}]: ${nhlEmojiMap[homeTeam]}`
+        `Away: <@${awayPlayer.id}> [${awayPlayer.elo}]: ${nhlEmojiMap[awayTeam]}\n` +
+        `Home: <@${homePlayer.id}> [${homePlayer.elo}]: ${nhlEmojiMap[homeTeam]}`
       );
     }
 
+    // --- Update queue message after any change ---
     await sendOrUpdateQueueMessage(client);
 
   } catch (err) {
     console.error('❌ Error handling interaction:', err);
   }
 }
+
 
 // Reset queue channel
 async function resetQueueChannel(client) {
