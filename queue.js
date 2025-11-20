@@ -1,3 +1,4 @@
+// queue.js
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
 import { google } from 'googleapis';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
@@ -27,16 +28,16 @@ export async function resetQueueChannel(client) {
   // Queue starts empty on restart
   queue = [];
 
-  // Send persistent queue message (empty list, with buttons)
+  // Send persistent queue message (even empty queue)
   queueMessage = await channel.send({
-    content: queue.map(p => `${p.name} [${p.elo}]`).join('\n') || '', // empty string if queue is empty
+    content: queue.map(p => `${p.name} [${p.elo}]`).join('\n'), // empty string if empty
     components: getQueueButtons()
   });
 }
 
 // === Send/update persistent queue message ===
 export async function sendOrUpdateQueueMessage(channel) {
-  const content = queue.map(p => `${p.name} [${p.elo}]`).join('\n') || ''; // empty string if queue empty
+  const content = queue.map(p => `${p.name} [${p.elo}]`).join('\n'); // empty string if empty
 
   if (queueMessage) {
     await queueMessage.edit({ content, components: getQueueButtons() });

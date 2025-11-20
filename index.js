@@ -146,6 +146,7 @@ client.on('interactionCreate', async (interaction) => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 
     // Reset queue channel: delete old messages, flush queue, send new persistent message with buttons
+    // This ensures the "queue window" is always the only message, even if empty
     await resetQueueChannel(client);
 
   } catch (err) {
