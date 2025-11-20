@@ -1,10 +1,11 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+// queue.js
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 
 // In-memory queue
-let queue = [];
+export let queue = [];
 
 // Build the UI buttons
-function buildButtons() {
+export function buildButtons() {
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('join_queue')
@@ -19,7 +20,7 @@ function buildButtons() {
 }
 
 // Build embed showing current queue
-function buildQueueEmbed() {
+export function buildQueueEmbed() {
     const list = queue.length
         ? queue.map((u, i) => `${i + 1}. <@${u}>`).join('\n')
         : '_Queue is empty_';
@@ -32,7 +33,7 @@ function buildQueueEmbed() {
 }
 
 // Send or update the queue message
-async function sendOrUpdateQueueMessage(client) {
+export async function sendOrUpdateQueueMessage(client) {
     const channelId = '1441041038931132537';
     const channel = await client.channels.fetch(channelId);
 
@@ -57,7 +58,7 @@ async function sendOrUpdateQueueMessage(client) {
 }
 
 // Button handlers
-async function handleInteraction(interaction, client) {
+export async function handleInteraction(interaction, client) {
     if (!interaction.isButton()) return;
 
     const userId = interaction.user.id;
@@ -77,9 +78,3 @@ async function handleInteraction(interaction, client) {
     // Update queue message
     await sendOrUpdateQueueMessage(client);
 }
-
-module.exports = {
-    queue,
-    sendOrUpdateQueueMessage,
-    handleInteraction
-};
