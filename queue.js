@@ -1,8 +1,13 @@
-// queue.js
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
+import { google } from 'googleapis';
 
 // In-memory queue
 let queue = [];
+
+// In-memory cache for ELOs
+let eloCache = new Map();
+let lastEloFetch = 0;
+const ELO_CACHE_TTL = 60 * 1000; // 1 minute cache TTL
 
 // Queue channel ID
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
@@ -22,11 +27,52 @@ function buildButtons() {
   );
 }
 
-// Build embed showing current queue
-function buildQueueEmbed() {
-  const list = queue.length
-    ? queue.map((u, i) => `${i + 1}. <@${u}>`).join('\n')
-    : '_Queue is empty_';
+// Fetch ELOs from RawStandings with caching
+async function fetchEloForQueue() {
+  const now = Date.now();
+  if (eloCache.size && now - lastEloFetch < ELO_CACHE_TTL) {
+    return eloCache; // return cached values
+  }
+
+  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  const rawRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: process.env.SPREADSHEET_ID,
+    range: 'RawStandings!A:AO',
+  });
+
+  const data = rawRes.data.values || [];
+  eloCache = new Map();
+  data.forEach(row => {
+    const discordId = row[0];
+    const elo = row[38] ? parseInt(row[38]) : 1500; // Column AM = index 38
+    eloCache.set(discordId, elo);
+  });
+
+  lastEloFetch = now;
+  return eloCache;
+}
+
+// Build embed showing current queue with ELO
+async function buildQueueEmbed() {
+  if (!queue.length) {
+    return new EmbedBuilder()
+      .setTitle('🎮 NHL ’95 Game Queue')
+      .setDescription('_Queue is empty_')
+      .setColor('#0099ff')
+      .setTimestamp();
+  }
+
+  const eloMap = await fetchEloForQueue();
+
+  const list = queue
+    .map((u, i) => `${i + 1}. <@${u}> [${eloMap.get(u) || 1500}]`)
+    .join('\n');
 
   return new EmbedBuilder()
     .setTitle('🎮 NHL ’95 Game Queue')
@@ -42,16 +88,18 @@ async function sendOrUpdateQueueMessage(client) {
   if (client.queueMessageId) {
     try {
       const msg = await channel.messages.fetch(client.queueMessageId);
-      return msg.edit({ embeds: [buildQueueEmbed()], components: [buildButtons()] });
+      const embed = await buildQueueEmbed();
+      return msg.edit({ embeds: [embed], components: [buildButtons()] });
     } catch (e) {
       console.log('Queue message missing, sending a new one.');
     }
   }
 
   // Send a new persistent queue message
+  const embed = await buildQueueEmbed();
   const msg = await channel.send({
     content: '**NHL ’95 Game Queue**',
-    embeds: [buildQueueEmbed()],
+    embeds: [embed],
     components: [buildButtons()],
   });
 
@@ -73,18 +121,12 @@ async function handleInteraction(interaction, client) {
       queue = queue.filter(id => id !== userId);
     }
 
-    // Defer update to avoid ephemeral reply
     await interaction.deferUpdate();
-
-    // Refresh the queue message
     await sendOrUpdateQueueMessage(client);
 
   } catch (err) {
     console.error('❌ Error handling interaction:', err);
-    // 10062 = Unknown interaction; safe to ignore
-    if (err.code !== 10062) {
-      throw err;
-    }
+    if (err.code !== 10062) throw err;
   }
 }
 
@@ -98,7 +140,6 @@ async function resetQueueChannel(client) {
   queue = [];
   console.log('🧹 Queue channel reset; all old messages removed');
 
-  // Send initial persistent queue message
   await sendOrUpdateQueueMessage(client);
 }
 
