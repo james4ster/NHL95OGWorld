@@ -9,13 +9,10 @@ Main bot file for NHL95OGBot
 
 console.log('📄 SPREADSHEET_ID env var:', process.env.SPREADSHEET_ID);
 
-// === Imports ===
 import { Client, GatewayIntentBits } from 'discord.js';
 import express from 'express';
 import { handleGuildMemberAdd } from './welcome.js';
 import { google } from 'googleapis';
-
-// ⭐ Persistent button queue
 import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel } from './queue.js';
 
 // === Discord Client Setup ===
@@ -28,7 +25,7 @@ const client = new Client({
   ]
 });
 
-handleGuildMemberAdd(client); // Welcome / add new players
+handleGuildMemberAdd(client);
 
 // === Google Sheets Helper ===
 async function writePlayerToSheet(discordId, username, displayName, joinDate) {
@@ -134,7 +131,7 @@ client.on('interactionCreate', async (interaction) => {
     await client.login(process.env.DISCORD_TOKEN);
     console.log(`✅ Logged in as ${client.user.tag}`);
 
-    // ⭐ Reset queue channel: delete old messages, flush queue, send new persistent message
+    // ⭐ Flush queue channel & in-memory queue on restart
     await resetQueueChannel(client);
 
   } catch (err) {
