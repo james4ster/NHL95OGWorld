@@ -59,24 +59,34 @@ async function sendOrUpdateQueueMessage(client) {
 
 // Handle button interactions
 async function handleInteraction(interaction, client) {
-    if (!interaction.isButton()) return;
+  if (!interaction.isButton()) return;
 
-    const userId = interaction.user.id;
+  const userId = interaction.user.id;
 
+  try {
     if (interaction.customId === 'join_queue') {
-        if (!queue.includes(userId)) queue.push(userId);
+      if (!queue.includes(userId)) queue.push(userId);
     }
 
     if (interaction.customId === 'leave_queue') {
-        queue = queue.filter(id => id !== userId);
+      queue = queue.filter(id => id !== userId);
     }
 
-    // Acknowledge interaction without ephemeral message
+    // Defer update (no ephemeral reply)
     await interaction.deferUpdate();
 
-    // Refresh the queue message
+    // Update the persistent queue message
     await sendOrUpdateQueueMessage(client);
+
+  } catch (err) {
+    console.error('❌ Error handling interaction:', err);
+    // 10062 = Unknown interaction; safe to ignore
+    if (err.code !== 10062) {
+      throw err;
+    }
+  }
 }
+
 
 // Reset queue channel: delete old messages, flush queue, send fresh message
 async function resetQueueChannel(client) {
