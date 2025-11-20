@@ -72,20 +72,28 @@ async function buildQueueEmbed(client) {
 }
 
 async function sendOrUpdateQueueMessage(client) {
-  try {
-    const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-    const embed = await buildQueueEmbed(client);
-    if (!client.queueMessageId) {
-      const msg = await channel.send({ content: '**NHL ’95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
-      client.queueMessageId = msg.id;
-      return;
+    try {
+        const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+        const embed = await buildQueueEmbed(client);
+
+        let msg;
+        if (client.queueMessageId) {
+            try {
+                msg = await channel.messages.fetch(client.queueMessageId);
+                await msg.edit({ embeds: [embed], components: [buildQueueButtons()] });
+                return;
+            } catch (err) {
+                console.warn('❌ Previous queue message missing, creating new one');
+            }
+        }
+
+        msg = await channel.send({ content: '**NHL ’95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
+        client.queueMessageId = msg.id;
+    } catch (err) {
+        console.error('❌ Failed to send/update queue message:', err);
     }
-    const msg = await channel.messages.fetch(client.queueMessageId);
-    await msg.edit({ embeds: [embed], components: [buildQueueButtons()] });
-  } catch (err) {
-    console.error('❌ Failed to send/update queue message:', err);
-  }
 }
+
 
 // ----------------- DM Pending -----------------
 async function sendPendingDM(client, player1, player2) {
