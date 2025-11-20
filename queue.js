@@ -1,6 +1,3 @@
-// queue.js
-// debugging
-import { getNHLEmojiMap } from './nhlEmojiMap.js';
 import { google } from 'googleapis';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 
@@ -17,31 +14,44 @@ function getQueueButtons() {
   ];
 }
 
-// === Reset queue channel on restart ===
+// === Initialize persistent queue message ===
 export async function resetQueueChannel(client) {
   const channel = await client.channels.fetch(process.env.QUEUE_CHANNEL_ID);
   if (!channel) return;
 
-  // Delete any old messages
+  // Try to fetch last message sent by bot
   const messages = await channel.messages.fetch({ limit: 50 });
-  await Promise.all(messages.map(msg => msg.delete()));
+  queueMessage = messages.find(m => m.author.id === client.user.id && m.components.length > 0);
 
   // Queue starts empty on restart
   queue = [];
 
-  // Send persistent queue message (even empty queue)
-  queueMessage = await channel.send({
-    content: queue.map(p => `${p.name} [${p.elo}]`).join('\n'), // empty string if empty
-    components: getQueueButtons()
-  });
+  // If no persistent message found, send a new one
+  if (!queueMessage) {
+    queueMessage = await channel.send({
+      content: '*(empty)*',
+      components: getQueueButtons()
+    });
+  } else {
+    // Edit the existing one to clear content
+    await queueMessage.edit({ content: '*(empty)*', components: getQueueButtons() });
+  }
 }
 
-// === Send/update persistent queue message ===
+// === Update persistent queue message ===
 export async function sendOrUpdateQueueMessage(channel) {
-  const content = queue.map(p => `${p.name} [${p.elo}]`).join('\n'); // empty string if empty
+  const content = queue.length > 0
+    ? queue.map(p => `${p.name} [${p.elo}]`).join('\n')
+    : '*(empty)*';
 
   if (queueMessage) {
-    await queueMessage.edit({ content, components: getQueueButtons() });
+    try {
+      await queueMessage.edit({ content, components: getQueueButtons() });
+    } catch (err) {
+      console.error('❌ Error editing queue message, resending:', err);
+      // If edit fails (Unknown Message), send a new persistent message
+      queueMessage = await channel.send({ content, components: getQueueButtons() });
+    }
   } else {
     queueMessage = await channel.send({ content, components: getQueueButtons() });
   }
@@ -55,7 +65,6 @@ export async function handleInteraction(interaction, client) {
   const discordId = interaction.user.id;
 
   try {
-    // Fetch ELO from RawStandings
     const sheets = google.sheets({ version: 'v4', auth: new google.auth.GoogleAuth({
       credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),
       scopes: ['https://www.googleapis.com/auth/spreadsheets']
@@ -67,7 +76,9 @@ export async function handleInteraction(interaction, client) {
     });
     const data = rawRes.data.values || [];
     const rowIndex = data.findIndex(r => r[0] === discordId);
-    const elo = rowIndex !== -1 ? data[rowIndex][38] || 1500 : 1500;
+
+    // ELO from column AM (0-based index 38)
+    const elo = rowIndex !== -1 ? Number(data[rowIndex][38]) || 1500 : 1500;
 
     if (interaction.customId === 'join') {
       if (!queue.find(p => p.id === discordId)) {
@@ -83,42 +94,4 @@ export async function handleInteraction(interaction, client) {
   } catch (err) {
     console.error('❌ Error handling interaction:', err);
   }
-}
-
-// === Random Matchup for 2 players ===
-export async function tryMatchup(client, ratedChannelId) {
-  if (queue.length < 2) return;
-
-  const shuffled = queue.sort(() => Math.random() - 0.5);
-  const [player1, player2] = shuffled.splice(0, 2);
-  queue = shuffled;
-
-  const sheets = google.sheets({ version: 'v4', auth: new google.auth.GoogleAuth({
-    credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),
-    scopes: ['https://www.googleapis.com/auth/spreadsheets']
-  })});
-
-  const rawRes = await sheets.spreadsheets.values.get({
-    spreadsheetId: process.env.SPREADSHEET_ID,
-    range: 'RawStandings!A:AO'
-  });
-  const data = rawRes.data.values || [];
-  const row1 = data.find(r => r[0] === player1.id);
-  const row2 = data.find(r => r[0] === player2.id);
-
-  const nhlMap = getNHLEmojiMap();
-  const team1 = row1 ? nhlMap[row1[3]] : '🏒';
-  const team2 = row2 ? nhlMap[row2[3]] : '🏒';
-
-  const homeFirst = Math.random() < 0.5;
-  const homePlayer = homeFirst ? player1 : player2;
-  const awayPlayer = homeFirst ? player2 : player1;
-  const homeTeam = homeFirst ? team1 : team2;
-  const awayTeam = homeFirst ? team2 : team1;
-
-  const channel = await client.channels.fetch(ratedChannelId);
-  await channel.send(`🏒 Matchup Set!\n${homeTeam} <@${homePlayer.id}> at ${awayTeam} <@${awayPlayer.id}>`);
-
-  const queueChannel = await client.channels.fetch(process.env.QUEUE_CHANNEL_ID);
-  await sendOrUpdateQueueMessage(queueChannel);
 }
