@@ -1,7 +1,7 @@
 // queue.js
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import { google } from 'googleapis';
-import { getNHLEmojiMap } from './nhlEmojiMap.js'; // Use your emoji map
+import { getNHLEmojiMap } from './nhlEmojiMap.js';
 
 // In-memory queue
 let queue = [];
@@ -10,7 +10,7 @@ let queue = [];
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
 const RATED_GAMES_CHANNEL_ID = process.env.RATED_GAMES_CHANNEL_ID;
 
-// Build the buttons for join/leave
+// Build join/leave buttons
 function buildButtons() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -24,7 +24,7 @@ function buildButtons() {
   );
 }
 
-// Build embed showing current queue
+// Build queue embed
 async function buildQueueEmbed(client) {
   if (queue.length === 0) {
     return new EmbedBuilder()
@@ -34,7 +34,6 @@ async function buildQueueEmbed(client) {
       .setTimestamp();
   }
 
-  // Fetch mappings from Sheets
   let idToPlayerName = {};
   let playerNameToElo = {};
 
@@ -46,22 +45,26 @@ async function buildQueueEmbed(client) {
     });
     const sheets = google.sheets({ version: 'v4', auth });
 
-    const pmRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.SPREADSHEET_ID,
-      range: 'PlayerMaster!A:C',
-    });
+    const [pmRes, rsRes] = await Promise.all([
+      sheets.spreadsheets.values.get({
+        spreadsheetId: process.env.SPREADSHEET_ID,
+        range: 'PlayerMaster!A:C',
+      }),
+      sheets.spreadsheets.values.get({
+        spreadsheetId: process.env.SPREADSHEET_ID,
+        range: 'RawStandings!A:AM',
+      }),
+    ]);
+
     const pmData = pmRes.data.values || [];
+    const rsData = rsRes.data.values || [];
+
     for (const row of pmData) {
       const discordId = row[0];
       const playerName = row[2];
       if (discordId && playerName) idToPlayerName[discordId] = playerName;
     }
 
-    const rsRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.SPREADSHEET_ID,
-      range: 'RawStandings!A:AM',
-    });
-    const rsData = rsRes.data.values || [];
     for (const row of rsData) {
       const playerName = row[0];
       const eloRaw = row[38];
@@ -77,8 +80,7 @@ async function buildQueueEmbed(client) {
       const discordId = u.id;
       const playerName = idToPlayerName[discordId] || u.name || `<@${discordId}>`;
       const elo = playerNameToElo[playerName] || (u.elo || 1500);
-      const displayName = playerName.startsWith('<@') ? playerName : playerName;
-      return `${i + 1}. ${displayName} [${elo}]`;
+      return `${i + 1}. ${playerName} [${elo}]`;
     })
     .join('\n');
 
@@ -89,7 +91,7 @@ async function buildQueueEmbed(client) {
     .setTimestamp();
 }
 
-// Send or update the persistent queue message
+// Send or update persistent queue message
 async function sendOrUpdateQueueMessage(client) {
   if (!client.queueMessageId) {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
@@ -130,6 +132,11 @@ async function handleInteraction(interaction, client) {
   if (!interaction.isButton()) return;
   const userId = interaction.user.id;
 
+  // ✅ Defer update once at start to avoid 40060
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate();
+  }
+
   try {
     const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
     const auth = new google.auth.GoogleAuth({
@@ -152,12 +159,25 @@ async function handleInteraction(interaction, client) {
     const playerMasterData = pmRes.data.values || [];
     const rawStandingsData = rsRes.data.values || [];
 
-    const pmRow = playerMasterData.find(r => r[1] === userId); // B = Discord ID
-    const playerNickname = pmRow ? pmRow[2] : interaction.user.username; // C = Nickname
+    // Build mappings
+    const idToPlayerName = {};
+    const playerNameToElo = {};
+    for (const row of playerMasterData) {
+      const discordId = row[0];
+      const playerName = row[2];
+      if (discordId && playerName) idToPlayerName[discordId] = playerName;
+    }
+    for (const row of rawStandingsData) {
+      const playerName = row[0];
+      const eloRaw = row[38];
+      const elo = eloRaw ? parseInt(eloRaw, 10) : 1500;
+      if (playerName) playerNameToElo[playerName] = elo;
+    }
 
-    const rsRow = rawStandingsData.find(r => r[0] === playerNickname);
-    const elo = rsRow ? rsRow[38] || 1500 : 1500;
+    const pmRow = playerMasterData.find(r => r[1] === userId);
+    const playerNickname = pmRow ? pmRow[2] : interaction.user.username;
     const name = playerNickname;
+    const elo = playerNameToElo[playerNickname] || 1500;
 
     if (interaction.customId === 'join_queue') {
       if (!queue.find(u => u.id === userId)) queue.push({ id: userId, name, elo });
@@ -165,30 +185,27 @@ async function handleInteraction(interaction, client) {
       queue = queue.filter(u => u.id !== userId);
     }
 
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate();
-    }
-
-    // --- Check for matchup ---
+    // --- Matchup logic ---
     while (queue.length >= 2) {
       const [player1, player2] = queue.splice(0, 2);
 
+      // Random teams
       const nhlEmojiMap = getNHLEmojiMap();
       const teams = Object.keys(nhlEmojiMap);
-
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
       let awayTeam = teams[Math.floor(Math.random() * teams.length)];
       while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
 
-      // Randomly pick home/away
+      // Random home/away assignment
       const homePlayerFirst = Math.random() < 0.5;
       const homePlayer = homePlayerFirst ? player1 : player2;
       const awayPlayer = homePlayerFirst ? player2 : player1;
 
-      // Lookup ELO from mappings fetched earlier
+      // Correct ELOs
       const homeElo = playerNameToElo[idToPlayerName[homePlayer.id]] || homePlayer.elo || 1500;
       const awayElo = playerNameToElo[idToPlayerName[awayPlayer.id]] || awayPlayer.elo || 1500;
 
+      // Send matchup
       const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
       await ratedChannel.send(
         `🎮 Rated Game Matchup!\n` +
@@ -197,6 +214,7 @@ async function handleInteraction(interaction, client) {
       );
     }
 
+    // Update queue message
     await sendOrUpdateQueueMessage(client);
 
   } catch (err) {
