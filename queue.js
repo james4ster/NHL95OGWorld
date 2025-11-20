@@ -1,4 +1,6 @@
 // queue.js
+// this version works 100% perfect for joining and leaving, as well as the matchups with perfect output
+// the next version i will attempt to add an acknoledgment when a matchup is made
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import { google } from 'googleapis';
 import { getNHLEmojiMap } from './nhlEmojiMap.js'; // Use your emoji map
