@@ -17,7 +17,7 @@ import { handleGuildMemberAdd } from './welcome.js';
 import { google } from 'googleapis';
 
 // ⭐ Persistent button queue
-import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel, tryMatchup } from './queue.js';
+import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel } from './queue.js';
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
 
 // === Config Variables ===
@@ -129,13 +129,11 @@ app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
 
 // === Interaction Handler for Buttons ===
 client.on('interactionCreate', async (interaction) => {
-  await handleInteraction(interaction, client);
-
-  // ⭐ Attempt a matchup if queue has >=2 players
+  // Only handle join/leave buttons; no matchup logic
   try {
-    await tryMatchup(client, RATED_GAMES_CHANNEL_ID);
+    await handleInteraction(interaction, client);
   } catch (err) {
-    console.error('❌ Error handling matchup:', err);
+    console.error('❌ Error handling button interaction:', err);
   }
 });
 
