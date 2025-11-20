@@ -34,10 +34,10 @@ const client = new Client({
   ]
 });
 
-// Welcome / add new players
+// === Welcome / add new players ===
 handleGuildMemberAdd(client);
 
-// === Google Sheets Helper ===
+// === Google Sheets Helper: Add player to PlayerMaster ===
 async function writePlayerToSheet(discordId, username, displayName, joinDate) {
   const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
   const auth = new google.auth.GoogleAuth({
@@ -74,6 +74,7 @@ client.on('guildMemberAdd', async (member) => {
     });
     const sheets = google.sheets({ version: 'v4', auth });
 
+    // Check if player already exists
     const playerRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SPREADSHEET_ID,
       range: 'PlayerMaster!A:A',
@@ -90,7 +91,7 @@ client.on('guildMemberAdd', async (member) => {
       });
       console.log(`✅ Added ${username} to PlayerMaster`);
 
-      // Set default ELO
+      // Set default ELO in RawStandings
       const rawRes = await sheets.spreadsheets.values.get({
         spreadsheetId: process.env.SPREADSHEET_ID,
         range: 'RawStandings!A:AO',
@@ -110,7 +111,7 @@ client.on('guildMemberAdd', async (member) => {
     }
 
     // Assign default role
-    const roleId = '1433493333149352099';
+    const roleId = '1433493333149352099'; // general-player role
     const role = member.guild.roles.cache.get(roleId);
     if (role) await member.roles.add(role);
 
@@ -144,7 +145,7 @@ client.on('interactionCreate', async (interaction) => {
     await client.login(process.env.DISCORD_TOKEN);
     console.log(`✅ Logged in as ${client.user.tag}`);
 
-    // Reset queue channel: delete old messages, flush queue, send new persistent message
+    // Reset queue channel: delete old messages, flush queue, send new persistent message with buttons
     await resetQueueChannel(client);
 
   } catch (err) {
