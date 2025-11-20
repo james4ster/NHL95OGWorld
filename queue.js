@@ -1,11 +1,10 @@
-// queue.js
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 
-// In-memory queue
-export let queue = [];
+// Persistent in-memory queue
+export const queue = [];
 
 // Build the UI buttons
-export function buildButtons() {
+function buildButtons() {
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('join_queue')
@@ -20,7 +19,7 @@ export function buildButtons() {
 }
 
 // Build embed showing current queue
-export function buildQueueEmbed() {
+function buildQueueEmbed() {
     const list = queue.length
         ? queue.map((u, i) => `${i + 1}. <@${u}>`).join('\n')
         : '_Queue is empty_';
@@ -32,29 +31,43 @@ export function buildQueueEmbed() {
         .setTimestamp();
 }
 
-// Send or update the queue message
+// Send or update the persistent queue message
 export async function sendOrUpdateQueueMessage(client) {
     const channelId = '1441041038931132537';
     const channel = await client.channels.fetch(channelId);
 
-    // If message already exists, update it
+    // Check if there is an existing queue message
+    let msg;
     if (client.queueMessageId) {
         try {
-            const msg = await channel.messages.fetch(client.queueMessageId);
+            msg = await channel.messages.fetch(client.queueMessageId);
             return msg.edit({ embeds: [buildQueueEmbed()], components: [buildButtons()] });
-        } catch (e) {
-            console.log("Queue message missing, sending new one.");
+        } catch (err) {
+            console.log('Queue message not found, sending a new one.');
         }
     }
 
-    // Otherwise create a new one
-    const msg = await channel.send({
+    // Try to find an existing queue message in the last 10 messages
+    const messages = await channel.messages.fetch({ limit: 10 });
+    const oldMsg = messages.find(
+        m => m.author.id === client.user.id && m.content.includes('NHL ’95 Game Queue')
+    );
+
+    if (oldMsg) {
+        client.queueMessageId = oldMsg.id;
+        msg = oldMsg;
+        return msg.edit({ embeds: [buildQueueEmbed()], components: [buildButtons()] });
+    }
+
+    // Otherwise, create a new message
+    msg = await channel.send({
         content: '**NHL ’95 Game Queue**',
         embeds: [buildQueueEmbed()],
         components: [buildButtons()]
     });
 
     client.queueMessageId = msg.id;
+    return msg;
 }
 
 // Button handlers
@@ -66,15 +79,16 @@ export async function handleInteraction(interaction, client) {
     // JOIN
     if (interaction.customId === 'join_queue') {
         if (!queue.includes(userId)) queue.push(userId);
-        await interaction.reply({ content: 'You joined the queue!', ephemeral: true });
+        await interaction.reply({ content: '✅ You joined the queue!', ephemeral: true });
     }
 
     // LEAVE
     if (interaction.customId === 'leave_queue') {
-        queue = queue.filter(id => id !== userId);
-        await interaction.reply({ content: 'You left the queue.', ephemeral: true });
+        const index = queue.indexOf(userId);
+        if (index > -1) queue.splice(index, 1);
+        await interaction.reply({ content: '❌ You left the queue.', ephemeral: true });
     }
 
-    // Update queue message
+    // Update the persistent queue message
     await sendOrUpdateQueueMessage(client);
 }
