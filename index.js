@@ -5,7 +5,6 @@ Main bot file for NHL95OGBot
 - Assigns default ELO (1500) to new players in RawStandings
 - Assigns default role of general-player to new players
 - Persistent button-based queue in a dedicated channel
-- Randomized matchup for 2 players with emojis and ELO display
 */
 
 console.log('📄 SPREADSHEET_ID env var:', process.env.SPREADSHEET_ID);
@@ -17,12 +16,7 @@ import { handleGuildMemberAdd } from './welcome.js';
 import { google } from 'googleapis';
 
 // ⭐ Persistent button queue
-import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel } from './queue.js';
-import { getNHLEmojiMap } from './nhlEmojiMap.js';
-
-// === Config Variables ===
-const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
-const RATED_GAMES_CHANNEL_ID = process.env.RATED_GAMES_CHANNEL_ID;
+import { queue, sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel } from './queue.js';
 
 // === Discord Client Setup ===
 const client = new Client({
@@ -102,9 +96,9 @@ client.on('guildMemberAdd', async (member) => {
       if (rowIndex !== -1 && !data[rowIndex][38]) {
         await sheets.spreadsheets.values.update({
           spreadsheetId: process.env.SPREADSHEET_ID,
-          range: `RawStandings!AM${rowIndex + 1}:AO${rowIndex + 1}`,
+          range: `RawStandings!AM${rowIndex + 1}:AM${rowIndex + 1}`,
           valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [[1500, 1500, 1500]] },
+          requestBody: { values: [[1500]] },
         });
         console.log(`✅ Set default ELO = 1500 for ${username}`);
       }
@@ -129,11 +123,10 @@ app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
 
 // === Interaction Handler for Buttons ===
 client.on('interactionCreate', async (interaction) => {
-  // Only handle join/leave buttons; no matchup logic
   try {
     await handleInteraction(interaction, client);
   } catch (err) {
-    console.error('❌ Error handling button interaction:', err);
+    console.error('❌ Error handling interaction:', err);
   }
 });
 
@@ -144,7 +137,6 @@ client.on('interactionCreate', async (interaction) => {
     console.log(`✅ Logged in as ${client.user.tag}`);
 
     // Reset queue channel: delete old messages, flush queue, send new persistent message with buttons
-    // This ensures the "queue window" is always the only message, even if empty
     await resetQueueChannel(client);
 
   } catch (err) {
