@@ -18,7 +18,7 @@ import { google } from 'googleapis';
 
 // ⭐ Persistent button queue
 import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel, tryMatchup } from './queue.js';
-import { getNHLEmojiMap } from './emojimap.js';
+import { getNHLEmojiMap } from './nhlEmojiMap.js';
 
 // === Config Variables ===
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;

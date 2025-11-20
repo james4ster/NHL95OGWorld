@@ -1,4 +1,4 @@
-import { getNHLEmojiMap } from './emojimap.js';
+import { getNHLEmojiMap } from './nhlEmojiMap.js';
 import { google } from 'googleapis';
 
 let queue = [];
