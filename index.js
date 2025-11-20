@@ -16,7 +16,7 @@ import { handleGuildMemberAdd } from './welcome.js';
 import { google } from 'googleapis';
 
 // ⭐ Persistent button queue
-import { handleInteraction, resetQueueChannel } from './queue.js';
+import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel } from './queue.js';
 
 // === Discord Client Setup ===
 const client = new Client({
@@ -134,7 +134,7 @@ client.on('interactionCreate', async (interaction) => {
     await client.login(process.env.DISCORD_TOKEN);
     console.log(`✅ Logged in as ${client.user.tag}`);
 
-    // ⭐ Reset queue channel: flush queue, delete old messages, send new persistent message
+    // ⭐ Reset queue channel: delete old messages, flush queue, send new persistent message
     await resetQueueChannel(client);
 
   } catch (err) {
