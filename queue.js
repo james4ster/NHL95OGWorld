@@ -1,18 +1,22 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 
-// === In-memory queue ===
-export let queue = [];
+// In-memory queue
+let queue = [];
+
+// Queue channel ID
+const QUEUE_CHANNEL_ID = '1441041038931132537';
 
 // Persistent message ID
-let queueMessageId;
+let queueMessageId = null;
 
-// === Buttons ===
+// Build buttons
 function buildButtons() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('join_queue')
       .setLabel('Join Queue')
       .setStyle(ButtonStyle.Success),
+
     new ButtonBuilder()
       .setCustomId('leave_queue')
       .setLabel('Leave Queue')
@@ -20,7 +24,7 @@ function buildButtons() {
   );
 }
 
-// === Embed showing current queue ===
+// Build embed showing queue
 function buildQueueEmbed() {
   const list = queue.length
     ? queue.map((u, i) => `${i + 1}. <@${u}>`).join('\n')
@@ -33,62 +37,70 @@ function buildQueueEmbed() {
     .setTimestamp();
 }
 
-// === Send or update persistent queue message ===
-export async function sendOrUpdateQueueMessage(client) {
-  const channelId = '1441041038931132537';
-  const channel = await client.channels.fetch(channelId);
+// Send or update persistent queue message
+async function sendOrUpdateQueueMessage(client) {
+  const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
 
   if (queueMessageId) {
     try {
       const msg = await channel.messages.fetch(queueMessageId);
-      return msg.edit({ embeds: [buildQueueEmbed()], components: [buildButtons()] });
-    } catch {
-      console.log('Queue message missing, sending a new one.');
+      await msg.edit({ embeds: [buildQueueEmbed()], components: [buildButtons()] });
+      return msg;
+    } catch (err) {
+      // Message deleted or missing, send new one
+      queueMessageId = null;
     }
   }
 
+  // Send new persistent message
   const msg = await channel.send({
     content: '**NHL ’95 Game Queue**',
     embeds: [buildQueueEmbed()],
-    components: [buildButtons()],
+    components: [buildButtons()]
   });
 
   queueMessageId = msg.id;
+  return msg;
 }
 
-// === Handle button interactions ===
-export async function handleInteraction(interaction, client) {
+// Handle button interactions
+async function handleInteraction(interaction, client) {
   if (!interaction.isButton()) return;
 
   const userId = interaction.user.id;
 
   if (interaction.customId === 'join_queue') {
     if (!queue.includes(userId)) queue.push(userId);
-    await interaction.reply({ content: '✅ You joined the queue!', ephemeral: true });
+    await interaction.reply({ content: '✅ You joined the queue!', flags: 64 });
   }
 
   if (interaction.customId === 'leave_queue') {
     queue = queue.filter(id => id !== userId);
-    await interaction.reply({ content: '✅ You left the queue.', ephemeral: true });
+    await interaction.reply({ content: '❌ You left the queue.', flags: 64 });
   }
 
+  // Update the persistent message
   await sendOrUpdateQueueMessage(client);
 }
 
-// === Reset queue channel on bot restart ===
-export async function resetQueueChannel(client) {
-  const channelId = '1441041038931132537';
-  const channel = await client.channels.fetch(channelId);
+// Flush queue and remove old messages in queue channel
+async function resetQueueChannel(client) {
+  const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
 
-  const messages = await channel.messages.fetch({ limit: 50 });
-  for (const [, msg] of messages) {
-    if (msg.author.id === client.user.id) {
-      await msg.delete().catch(() => {});
-    }
+  // Fetch and delete old messages
+  const messages = await channel.messages.fetch({ limit: 100 });
+  const botMessages = messages.filter(msg => msg.author.id === client.user.id);
+  for (const msg of botMessages.values()) {
+    await msg.delete().catch(() => null);
   }
+
+  queue = [];
+  queueMessageId = null;
 
   console.log('🧹 Queue channel reset; all old messages removed');
 
-  queue = [];
+  // Send new persistent message
   await sendOrUpdateQueueMessage(client);
 }
+
+export { handleInteraction, resetQueueChannel };
