@@ -142,7 +142,8 @@ client.on('interactionCreate', async (interaction) => {
     await client.login(process.env.DISCORD_TOKEN);
     console.log(`✅ Logged in as ${client.user.tag}`);
 
-    // ⭐ After login, create/update the queue message in your queue channel
+    // Flush queue on startup
+    queue = [];
     await sendOrUpdateQueueMessage(client);
 
   } catch (err) {
