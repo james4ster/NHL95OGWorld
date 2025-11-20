@@ -40,7 +40,7 @@ async function writePlayerToSheet(discordId, username, displayName, joinDate) {
   const sheets = google.sheets({ version: 'v4', auth });
 
   await sheets.spreadsheets.values.append({
-    spreadsheetId: process.env.SPRE ADSHEET_ID,
+    spreadsheetId: process.env.SPREADSHEET_ID,
     range: 'PlayerMaster!A:E',
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
