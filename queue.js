@@ -1,4 +1,5 @@
 // queue.js
+// this is the working version for the queue window and join/leave buttons - ELO works
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import { google } from 'googleapis';
 
