@@ -6,14 +6,16 @@ Main bot file for NHL95OGBot
  - Assigns default role of general-player to new players
 */
 
-// === Imports ===
 console.log('📄 SPREADSHEET_ID env var:', process.env.SPREADSHEET_ID);
 
+// === Imports ===
 import { Client, GatewayIntentBits } from 'discord.js';
 import express from 'express';
 import { handleGuildMemberAdd } from './welcome.js';
 import { google } from 'googleapis';
-import { setupQueueCommands } from './queue.js'; // only queue/play commands
+
+// ⭐ NEW: Import the button-based queue system
+import { sendOrUpdateQueueMessage, handleInteraction } from './queue.js';
 
 // === Discord Bot Setup ===
 const client = new Client({
@@ -24,6 +26,7 @@ const client = new Client({
     GatewayIntentBits.MessageContent
   ]
 });
+
 handleGuildMemberAdd(client); // New joiner function
 
 // === Function to write new member to Google Sheets ===
@@ -37,8 +40,8 @@ async function writePlayerToSheet(discordId, username, displayName, joinDate) {
   const sheets = google.sheets({ version: 'v4', auth });
 
   await sheets.spreadsheets.values.append({
-    spreadsheetId: process.env.SPREADSHEET_ID,
-    range: 'PlayerMaster!A:E',  // A=Discord ID, B=Username, C=Display Name, D=Join Date
+    spreadsheetId: process.env.SPRE ADSHEET_ID,
+    range: 'PlayerMaster!A:E',
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     requestBody: {
@@ -64,7 +67,6 @@ client.on('guildMemberAdd', async (member) => {
     });
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // Fetch existing Discord IDs in PlayerMaster
     const playerRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SPREADSHEET_ID,
       range: 'PlayerMaster!A:A',
@@ -74,7 +76,6 @@ client.on('guildMemberAdd', async (member) => {
     if (existingIds.includes(discordId)) {
       console.log(`ℹ️ ${username} already exists in PlayerMaster, skipping insert.`);
     } else {
-      // Add new player
       await sheets.spreadsheets.values.append({
         spreadsheetId: process.env.SPREADSHEET_ID,
         range: 'PlayerMaster!A:E',
@@ -84,16 +85,15 @@ client.on('guildMemberAdd', async (member) => {
       });
       console.log(`✅ Added ${username} to PlayerMaster`);
 
-      // Fetch RawStandings once
       const rawRes = await sheets.spreadsheets.values.get({
         spreadsheetId: process.env.SPREADSHEET_ID,
-        range: 'RawStandings!A:AO', // include AM:AO
+        range: 'RawStandings!A:AO',
       });
       const data = rawRes.data.values || [];
 
       const rowIndex = data.findIndex(row => row[0] === discordId);
       if (rowIndex !== -1) {
-        const currentElo = data[rowIndex][38]; // Column AM
+        const currentElo = data[rowIndex][38];
         if (!currentElo) {
           await sheets.spreadsheets.values.update({
             spreadsheetId: process.env.SPREADSHEET_ID,
@@ -106,7 +106,6 @@ client.on('guildMemberAdd', async (member) => {
       }
     }
 
-    // Assign default role
     const roleId = '1433493333149352099';
     const role = member.guild.roles.cache.get(roleId);
     if (role) {
@@ -132,14 +131,20 @@ app.listen(PORT, () => {
   console.log(`🌐 Web server running on port ${PORT}`);
 });
 
-// === Register queue/play commands only ===
-setupQueueCommands(client); // /play, /queue
+// ⭐ === Interaction Handler for Queue Buttons ===
+client.on('interactionCreate', async (interaction) => {
+  await handleInteraction(interaction, client);
+});
 
 // === Login to Discord ===
 (async () => {
   try {
     await client.login(process.env.DISCORD_TOKEN);
     console.log(`✅ Logged in as ${client.user.tag}`);
+
+    // ⭐ After login, create/update the queue message in your queue channel
+    await sendOrUpdateQueueMessage(client);
+
   } catch (err) {
     console.error('❌ Discord login failed:', err);
     console.error(err.stack);

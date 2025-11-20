@@ -1,80 +1,85 @@
-import { nhlEmojiMap } from './nhlEmojiMap.js';
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 
-// ============================================================
-// Keep track of the queue with timestamps
-const queue = [];
-const QUEUE_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+// In-memory queue
+let queue = [];
 
-// === Helper to get NHL emoji for a team ===
-function getNHLEmoji(teamCode) {
-  return nhlEmojiMap[teamCode] || '🏒';
-}
+// Build the UI buttons
+function buildButtons() {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('join_queue')
+            .setLabel('Join Queue')
+            .setStyle(ButtonStyle.Success),
 
-// === Periodically clean up expired users ===
-setInterval(() => {
-  const now = Date.now();
-  for (let i = queue.length - 1; i >= 0; i--) {
-    if (now - queue[i].timestamp > QUEUE_TIMEOUT) {
-      const expiredUser = queue.splice(i, 1)[0];
-      if (expiredUser.channel) {
-        expiredUser.channel.send(`⏰ <@${expiredUser.id}> removed from queue due to inactivity.`);
-      }
-    }
-  }
-}, 60 * 1000); // check every minute
-
-// ============================================================
-// Setup slash commands
-export function setupQueueCommands(client) {
-  client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-
-    const { commandName } = interaction;
-
-    if (commandName === 'play') await handlePlay(interaction);
-    if (commandName === 'queue') await handleQueue(interaction);
-  });
-}
-
-// ============================================================
-// /play command handler
-async function handlePlay(interaction) {
-  await interaction.deferReply({ ephemeral: true });
-
-  const user = interaction.user;
-  if (queue.find(p => p.id === user.id)) {
-    await interaction.editReply({ content: `⚠️ You're already in the queue!` });
-    return;
-  }
-
-  queue.push({ id: user.id, username: user.username, timestamp: Date.now(), channel: interaction.channel });
-  await interaction.editReply({ content: `🟢 You've joined the queue! Current: ${queue.map(u => `<@${u.id}>`).join(', ')}` });
-
-  // Start match if 2 or more players
-  if (queue.length >= 2) {
-    const [player1, player2] = queue.splice(0, 2);
-    const home = Math.random() < 0.5 ? player1 : player2;
-    const away = home === player1 ? player2 : player1;
-
-    // Random teams
-    const teams = Object.keys(nhlEmojiMap);
-    const homeTeam = teams[Math.floor(Math.random() * teams.length)];
-    let awayTeam = teams[Math.floor(Math.random() * teams.length)];
-    while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
-
-    await interaction.channel.send(
-      `🏒 **Random Match Ready!**\n${getNHLEmoji(homeTeam)} <@${home.id}> **at** ${getNHLEmoji(awayTeam)} <@${away.id}>`
+        new ButtonBuilder()
+            .setCustomId('leave_queue')
+            .setLabel('Leave Queue')
+            .setStyle(ButtonStyle.Danger)
     );
-  }
 }
 
-// ============================================================
-// /queue command handler
-async function handleQueue(interaction) {
-  if (queue.length === 0) {
-    await interaction.reply({ content: '🚫 The queue is currently empty.', ephemeral: true });
-    return;
-  }
-  const queueList = queue.map(u => `<@${u.id}>`).join(', ');
-  await interaction.reply({ content: `📋 Current queue (${queue.length}): ${queueList}`, ephemeral: true });
+// Build embed showing current queue
+function buildQueueEmbed() {
+    const list = queue.length
+        ? queue.map((u, i) => `${i + 1}. <@${u}>`).join('\n')
+        : '_Queue is empty_';
+
+    return new EmbedBuilder()
+        .setTitle('🎮 NHL ’95 Game Queue')
+        .setDescription(list)
+        .setColor('#0099ff')
+        .setTimestamp();
 }
+
+// Send or update the queue message
+async function sendOrUpdateQueueMessage(client) {
+    const channelId = '1441041038931132537';
+    const channel = await client.channels.fetch(channelId);
+
+    // If message already exists, update it
+    if (client.queueMessageId) {
+        try {
+            const msg = await channel.messages.fetch(client.queueMessageId);
+            return msg.edit({ embeds: [buildQueueEmbed()], components: [buildButtons()] });
+        } catch (e) {
+            console.log("Queue message missing, sending new one.");
+        }
+    }
+
+    // Otherwise create a new one
+    const msg = await channel.send({
+        content: '**NHL ’95 Game Queue**',
+        embeds: [buildQueueEmbed()],
+        components: [buildButtons()]
+    });
+
+    client.queueMessageId = msg.id;
+}
+
+// Button handlers
+async function handleInteraction(interaction, client) {
+    if (!interaction.isButton()) return;
+
+    const userId = interaction.user.id;
+
+    // JOIN
+    if (interaction.customId === 'join_queue') {
+        if (!queue.includes(userId)) queue.push(userId);
+        await interaction.reply({ content: 'You joined the queue!', ephemeral: true });
+    }
+
+    // LEAVE
+    if (interaction.customId === 'leave_queue') {
+        queue = queue.filter(id => id !== userId);
+        await interaction.reply({ content: 'You left the queue.', ephemeral: true });
+    }
+
+    // Update queue message
+    await sendOrUpdateQueueMessage(client);
+}
+
+module.exports = {
+    queue,
+    sendOrUpdateQueueMessage,
+    handleInteraction
+};
