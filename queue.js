@@ -146,42 +146,14 @@ async function sendOrUpdateQueueMessage(client) {
 }
 
 // Handle button interactions
+// Handle button interactions
 async function handleInteraction(interaction, client) {
   if (!interaction.isButton()) return;
 
   const userId = interaction.user.id;
 
-  // Check whether the persistent message exists BEFORE acknowledging the interaction.
-  // If it's missing, recreate it first to avoid interaction conflicts.
-  let persistentExists = true;
   try {
-    if (!client.queueMessageId) throw new Error('no id');
-    const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-    await channel.messages.fetch(client.queueMessageId);
-  } catch (e) {
-    persistentExists = false;
-    // Recreate single persistent message (don't defer the interaction yet)
-    try {
-      const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-      // delete any stray messages so only one exists afterwards
-      const msgs = await channel.messages.fetch({ limit: 50 });
-      for (const m of msgs.values()) {
-        try { await m.delete(); } catch {}
-      }
-      const embed = await buildQueueEmbed(client);
-      const newMsg = await channel.send({
-        content: '**NHL ’95 Game Queue**',
-        embeds: [embed],
-        components: [buildButtons()],
-      });
-      client.queueMessageId = newMsg.id;
-    } catch (err) {
-      console.error('❌ Failed to recreate persistent queue message before interaction:', err);
-    }
-  }
-
-  try {
-    // Fetch current ELO/Player mapping once (we use the same sheet reads as buildQueueEmbed)
+    // --- Google Sheets setup ---
     const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
     const auth = new google.auth.GoogleAuth({
       credentials,
@@ -189,60 +161,51 @@ async function handleInteraction(interaction, client) {
     });
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // PlayerMaster: map discordId -> playerName (col C)
-    const pmRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.SPREADSHEET_ID,
-      range: 'PlayerMaster!A:C',
-    });
-    const pmData = pmRes.data.values || [];
-    const idToPlayerName = {};
-    for (const row of pmData) {
-      const discord = row[0];
-      const playerName = row[2]; // PlayerMaster column C
-      if (discord && playerName) idToPlayerName[discord] = playerName;
-    }
+    // Fetch PlayerMaster and RawStandings
+    const [pmRes, rsRes] = await Promise.all([
+      sheets.spreadsheets.values.get({
+        spreadsheetId: process.env.SPREADSHEET_ID,
+        range: 'PlayerMaster!A:C',
+      }),
+      sheets.spreadsheets.values.get({
+        spreadsheetId: process.env.SPREADSHEET_ID,
+        range: 'RawStandings!A:AM',
+      }),
+    ]);
 
-    // RawStandings: map playerName -> elo
-    const rsRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.SPREADSHEET_ID,
-      range: 'RawStandings!A:AM',
-    });
-    const rsData = rsRes.data.values || [];
-    const playerNameToElo = {};
-    for (const row of rsData) {
-      const playerName = row[0];
-      const eloRaw = row[38];
-      const elo = eloRaw ? parseInt(eloRaw, 10) : 1500;
-      if (playerName) playerNameToElo[playerName] = elo;
-    }
+    const playerMasterData = pmRes.data.values || [];
+    const rawStandingsData = rsRes.data.values || [];
 
-    // Resolve this user's playerName and elo
-    const playerName = idToPlayerName[userId] || interaction.user.username;
-    const resolvedElo = playerNameToElo[playerName] || 1500;
+    // --- Map Discord ID → Nickname (RawStandings column A) ---
+    const pmRow = playerMasterData.find(r => r[1] === userId); // column B = Discord ID
+    const playerNickname = pmRow ? pmRow[2] : interaction.user.username; // column C = Nickname
 
+    // --- Find ELO in RawStandings ---
+    const rsRow = rawStandingsData.find(r => r[0] === playerNickname); // column A = Nickname
+    const elo = rsRow ? rsRow[38] || 1500 : 1500; // column AM = index 38
+
+    const name = playerNickname;
+
+    // --- Update in-memory queue ---
     if (interaction.customId === 'join_queue') {
-      if (!queue.find(u => u.id === userId)) queue.push({ id: userId, name: playerName, elo: resolvedElo });
+      if (!queue.find(u => u.id === userId)) queue.push({ id: userId, name, elo });
     } else if (interaction.customId === 'leave_queue') {
       queue = queue.filter(u => u.id !== userId);
     }
 
-    // Now it's safe to acknowledge the interaction
-    try {
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferUpdate();
-      }
-    } catch (e) {
-      // ignore specific transient interaction errors
-      if (e.code && e.code !== 10062) console.error('❌ Error deferring interaction:', e);
+    // --- Defer interaction update ---
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate();
     }
 
-    // Update the persistent queue message
+    // --- Update persistent queue window ---
     await sendOrUpdateQueueMessage(client);
 
   } catch (err) {
     console.error('❌ Error handling interaction:', err);
   }
 }
+
 
 // Reset queue channel: delete old messages, flush queue, send fresh persistent message
 async function resetQueueChannel(client) {
