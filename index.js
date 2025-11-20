@@ -16,7 +16,11 @@ import { handleGuildMemberAdd } from './welcome.js';
 import { google } from 'googleapis';
 
 // ⭐ Persistent button queue
-import { queue, sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel } from './queue.js';
+import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel } from './queue.js';
+import { getNHLEmojiMap } from './nhlEmojiMap.js';
+
+// === Config Variables ===
+const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
 
 // === Discord Client Setup ===
 const client = new Client({
@@ -96,9 +100,9 @@ client.on('guildMemberAdd', async (member) => {
       if (rowIndex !== -1 && !data[rowIndex][38]) {
         await sheets.spreadsheets.values.update({
           spreadsheetId: process.env.SPREADSHEET_ID,
-          range: `RawStandings!AM${rowIndex + 1}:AM${rowIndex + 1}`,
+          range: `RawStandings!AM${rowIndex + 1}:AO${rowIndex + 1}`,
           valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [[1500]] },
+          requestBody: { values: [[1500, 1500, 1500]] },
         });
         console.log(`✅ Set default ELO = 1500 for ${username}`);
       }
@@ -123,11 +127,7 @@ app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
 
 // === Interaction Handler for Buttons ===
 client.on('interactionCreate', async (interaction) => {
-  try {
-    await handleInteraction(interaction, client);
-  } catch (err) {
-    console.error('❌ Error handling interaction:', err);
-  }
+  await handleInteraction(interaction, client);
 });
 
 // === Discord Login + Queue Initialization ===
