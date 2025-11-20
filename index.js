@@ -1,10 +1,11 @@
-/* 
+/*
 Main bot file for NHL95OGBot
 - Discord bot setup
 - Capture new Discord joiners automatically when they join the server
 - Assigns default ELO (1500) to new players in RawStandings
 - Assigns default role of general-player to new players
 - Persistent button-based queue in a dedicated channel
+- Randomized matchup for 2 players with emojis and ELO display
 */
 
 console.log('📄 SPREADSHEET_ID env var:', process.env.SPREADSHEET_ID);
@@ -16,7 +17,12 @@ import { handleGuildMemberAdd } from './welcome.js';
 import { google } from 'googleapis';
 
 // ⭐ Persistent button queue
-import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel } from './queue.js';
+import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel, tryMatchup } from './queue.js';
+import { getNHLEmojiMap } from './emojimap.js';
+
+// === Config Variables ===
+const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
+const RATED_GAMES_CHANNEL_ID = process.env.RATED_GAMES_CHANNEL_ID;
 
 // === Discord Client Setup ===
 const client = new Client({
@@ -28,7 +34,8 @@ const client = new Client({
   ]
 });
 
-handleGuildMemberAdd(client); // Welcome / add new players
+// Welcome / add new players
+handleGuildMemberAdd(client);
 
 // === Google Sheets Helper ===
 async function writePlayerToSheet(discordId, username, displayName, joinDate) {
@@ -115,17 +122,20 @@ client.on('guildMemberAdd', async (member) => {
 // === Express Server ===
 const app = express();
 app.use(express.json());
-
-app.get('/', (req, res) => {
-  res.send('🟢 NHL95OGBot is alive and ready to serve!');
-});
-
+app.get('/', (req, res) => res.send('🟢 NHL95OGBot is alive and ready to serve!'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
 
 // === Interaction Handler for Buttons ===
 client.on('interactionCreate', async (interaction) => {
   await handleInteraction(interaction, client);
+
+  // ⭐ Attempt a matchup if queue has >=2 players
+  try {
+    await tryMatchup(client, RATED_GAMES_CHANNEL_ID);
+  } catch (err) {
+    console.error('❌ Error handling matchup:', err);
+  }
 });
 
 // === Discord Login + Queue Initialization ===
@@ -134,7 +144,7 @@ client.on('interactionCreate', async (interaction) => {
     await client.login(process.env.DISCORD_TOKEN);
     console.log(`✅ Logged in as ${client.user.tag}`);
 
-    // ⭐ Reset queue channel: delete old messages, flush queue, send new persistent message
+    // Reset queue channel: delete old messages, flush queue, send new persistent message
     await resetQueueChannel(client);
 
   } catch (err) {
