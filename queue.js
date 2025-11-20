@@ -74,22 +74,55 @@ async function buildQueueEmbed(client) {
     console.error('❌ Error fetching sheets data for ELO mapping:', err);
   }
 
-  const list = queue
+  // Build main queue list with status
+  const queueList = queue
     .map((u, i) => {
       const discordId = u.id;
       const playerName = idToPlayerName[discordId] || u.name || `<@${discordId}>`;
       const elo = playerNameToElo[playerName] || (u.elo || 1500);
-      const displayName = playerName.startsWith('<@') ? playerName : playerName;
-      return `${i + 1}. ${displayName} [${elo}]`;
+
+      // Determine status emoji
+      let statusEmoji;
+      switch (u.status) {
+        case 'pending':
+          statusEmoji = '🟡'; // pending acknowledgment
+          break;
+        case 'acknowledged':
+          statusEmoji = '✅';
+          break;
+        default:
+          statusEmoji = 'waiting'; // not yet paired
+      }
+
+      return `${i + 1}. ${playerName} [${elo}] - ${statusEmoji}`;
     })
     .join('\n');
 
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setTitle('🎮 NHL ’95 Game Queue')
-    .setDescription(list)
     .setColor('#0099ff')
-    .setTimestamp();
+    .setTimestamp()
+    .setDescription(queueList);
+
+  // Optional: add a Pending Matches section if you want to show paired players
+  const pendingMatches = queue.filter(u => u.status === 'pending');
+  if (pendingMatches.length > 0) {
+    let pendingDescription = '';
+    // Assuming pendingMatches are in pairs sequentially in the queue
+    for (let i = 0; i < pendingMatches.length; i += 2) {
+      const home = pendingMatches[i];
+      const away = pendingMatches[i + 1];
+      if (!away) break;
+      const homeEmoji = home.status === 'pending' ? '🟡' : home.status === 'acknowledged' ? '✅' : '';
+      const awayEmoji = away.status === 'pending' ? '🟡' : away.status === 'acknowledged' ? '✅' : '';
+      pendingDescription += `- ${home.name} [${home.elo}] ${homeEmoji} vs ${away.name} [${away.elo}] ${awayEmoji}\n`;
+    }
+    embed.addFields({ name: 'Pending Matches', value: pendingDescription });
+  }
+
+  return embed;
 }
+
 
 // Send or update the persistent queue message
 async function sendOrUpdateQueueMessage(client) {
@@ -170,11 +203,18 @@ async function handleInteraction(interaction, client) {
     const elo = rsRow ? rsRow[38] || 1500 : 1500;
     const name = playerNickname;
 
-    if (interaction.customId === 'join_queue') {
-      if (!queue.find(u => u.id === userId)) queue.push({ id: userId, name, elo });
-    } else if (interaction.customId === 'leave_queue') {
-      queue = queue.filter(u => u.id !== userId);
+  if (interaction.customId === 'join_queue') {
+    if (!queue.find(u => u.id === userId)) {
+      queue.push({ 
+        id: userId, 
+        name, 
+        elo, 
+        status: 'waiting' // new field for pending acknowledgment system
+      });
     }
+  } else if (interaction.customId === 'leave_queue') {
+    queue = queue.filter(u => u.id !== userId);
+  }
 
     // --- Check for matchup ---
     while (queue.length >= 2) {
