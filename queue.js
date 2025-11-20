@@ -1,16 +1,15 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 
-// In-memory queue
+// Persistent in-memory queue
 export const queue = [];
 
-// Build the UI buttons
+// Build buttons for the queue message
 function buildButtons() {
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('join_queue')
             .setLabel('Join Queue')
             .setStyle(ButtonStyle.Success),
-
         new ButtonBuilder()
             .setCustomId('leave_queue')
             .setLabel('Leave Queue')
@@ -18,7 +17,7 @@ function buildButtons() {
     );
 }
 
-// Build embed showing current queue
+// Build queue embed
 function buildQueueEmbed() {
     const list = queue.length
         ? queue.map((u, i) => `${i + 1}. <@${u}>`).join('\n')
@@ -31,13 +30,13 @@ function buildQueueEmbed() {
         .setTimestamp();
 }
 
-// Send or update the persistent queue message
+// Send the persistent queue message
 export async function sendOrUpdateQueueMessage(client) {
     const channelId = '1441041038931132537';
     const channel = await client.channels.fetch(channelId);
     if (!channel.isTextBased()) return;
 
-    // If the persistent message exists, update it
+    // If message exists, update it
     if (client.queueMessageId) {
         try {
             const msg = await channel.messages.fetch(client.queueMessageId);
@@ -47,7 +46,7 @@ export async function sendOrUpdateQueueMessage(client) {
         }
     }
 
-    // Otherwise, send a new persistent queue message
+    // Only create one new message
     const msg = await channel.send({
         content: '**NHL ’95 Game Queue**',
         embeds: [buildQueueEmbed()],
@@ -63,22 +62,29 @@ export async function handleInteraction(interaction, client) {
 
     const userId = interaction.user.id;
 
-    if (interaction.customId === 'join_queue') {
-        if (!queue.includes(userId)) queue.push(userId);
-        await interaction.reply({ content: 'You joined the queue!', ephemeral: true });
-    }
+    try {
+        if (interaction.customId === 'join_queue') {
+            if (!queue.includes(userId)) queue.push(userId);
+            await interaction.reply({ content: '✅ You joined the queue!', flags: 64 });
+        }
 
-    if (interaction.customId === 'leave_queue') {
-        const index = queue.indexOf(userId);
-        if (index !== -1) queue.splice(index, 1);
-        await interaction.reply({ content: 'You left the queue.', ephemeral: true });
-    }
+        if (interaction.customId === 'leave_queue') {
+            const index = queue.indexOf(userId);
+            if (index !== -1) queue.splice(index, 1);
+            await interaction.reply({ content: '❌ You left the queue.', flags: 64 });
+        }
 
-    // Update the persistent queue message
-    await sendOrUpdateQueueMessage(client);
+        await sendOrUpdateQueueMessage(client);
+    } catch (err) {
+        if (err.code === 10062) {
+            console.log('⚠️ Interaction expired/unknown, ignoring.');
+        } else {
+            console.error('❌ Error handling interaction:', err);
+        }
+    }
 }
 
-// Reset the queue on bot startup
+// Flush old messages and reset queue
 export async function resetQueueChannel(client) {
     const channelId = '1441041038931132537';
     const channel = await client.channels.fetch(channelId);
@@ -87,8 +93,8 @@ export async function resetQueueChannel(client) {
     const messages = await channel.messages.fetch({ limit: 100 });
     await Promise.all(messages.map(msg => msg.delete().catch(console.error)));
 
+    queue.length = 0; // flush in-memory queue
     console.log('🧹 Queue channel reset; all old messages removed');
 
-    queue.length = 0; // flush in-memory queue
-    await sendOrUpdateQueueMessage(client);
+    await sendOrUpdateQueueMessage(client); // send new persistent queue message
 }
