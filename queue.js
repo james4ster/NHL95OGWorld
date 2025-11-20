@@ -173,9 +173,9 @@ async function handleInteraction(interaction, client) {
     while (queue.length >= 2) {
       const [player1, player2] = queue.splice(0, 2);
 
-      // Random NHL teams from emoji map
       const nhlEmojiMap = getNHLEmojiMap();
       const teams = Object.keys(nhlEmojiMap);
+
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
       let awayTeam = teams[Math.floor(Math.random() * teams.length)];
       while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
@@ -185,12 +185,15 @@ async function handleInteraction(interaction, client) {
       const homePlayer = homePlayerFirst ? player1 : player2;
       const awayPlayer = homePlayerFirst ? player2 : player1;
 
-      // Send matchup message
+      // Lookup ELO from mappings fetched earlier
+      const homeElo = playerNameToElo[idToPlayerName[homePlayer.id]] || homePlayer.elo || 1500;
+      const awayElo = playerNameToElo[idToPlayerName[awayPlayer.id]] || awayPlayer.elo || 1500;
+
       const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
       await ratedChannel.send(
-        `🎮 **Rated Game Matchup!**\n` +
-        `<@${homePlayer.id}> [${homePlayer.elo}] (${nhlEmojiMap[homeTeam]}) **vs** <@${awayPlayer.id}> [${awayPlayer.elo}] (${nhlEmojiMap[awayTeam]})\n` +
-        `Home: <@${homePlayer.id}> | Away: <@${awayPlayer.id}>`
+        `🎮 Rated Game Matchup!\n` +
+        `Away: <@${awayPlayer.id}> [${awayElo}]: ${nhlEmojiMap[awayTeam]}\n` +
+        `Home: <@${homePlayer.id}> [${homeElo}]: ${nhlEmojiMap[homeTeam]}`
       );
     }
 
