@@ -8,6 +8,22 @@ let queue = [];
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
 const RATED_GAMES_CHANNEL_ID = process.env.RATED_GAMES_CHANNEL_ID;
 
+async function getPlayerName(discordId) {
+  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
+  const sheets = google.sheets({ version: 'v4', auth });
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: process.env.SPREADSHEET_ID,
+    range: 'PlayerMaster!A:D',
+  });
+  const data = res.data.values || [];
+  const row = data.find(r => r[0] === discordId);
+  return row ? row[2] : discordId; // column D is displayName
+}
+
 // Buttons
 function buildQueueButtons() {
   return new ActionRowBuilder().addComponents(
@@ -54,11 +70,14 @@ async function buildQueueEmbed(client) {
       .setTimestamp();
   }
 
-  const list = queue.map((u, i) => `${i + 1}. ${u.name} ${u.status === 'pending' ? '🟡' : u.status === 'acknowledged' ? '✅' : ''}`).join('\n');
+  const list = await Promise.all(queue.map(async (u, i) => {
+    const name = await getPlayerName(u.id);
+    return `${i + 1}. ${name} ${u.status === 'pending' ? '🟡' : u.status === 'acknowledged' ? '✅' : ''}`;
+  }));
 
   return new EmbedBuilder()
     .setTitle('🎮 NHL ’95 Game Queue')
-    .setDescription(list)
+    .setDescription(list.join('\n'))
     .setColor('#0099ff')
     .setTimestamp();
 }
@@ -71,7 +90,7 @@ async function handleInteraction(interaction, client) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
 
     if (interaction.customId === 'join_queue') {
-      if (!queue.find(u => u.id === userId)) queue.push({ id: userId, name: userId, status: 'waiting' });
+      if (!queue.find(u => u.id === userId)) queue.push({ id: userId, status: 'waiting' });
     } else if (interaction.customId === 'leave_queue') {
       queue = queue.filter(u => u.id !== userId);
     } else if (interaction.customId.startsWith('ack_play_')) {
