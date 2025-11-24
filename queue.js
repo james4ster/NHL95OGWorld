@@ -4,6 +4,7 @@ import { google } from 'googleapis';
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
 
 let queue = [];
+let queueMessageId = null; // ensure only one persistent queue message
 
 // Queue & rated games channels
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
@@ -27,44 +28,6 @@ function buildAckButtons(playerId) {
   );
 }
 
-// ----------------- Safe queue message send/edit -----------------
-async function sendOrUpdateQueueMessage(client) {
-  try {
-    const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-    const embed = await buildQueueEmbed(client);
-
-    // Try to fetch the message by ID first
-    let queueMsg;
-    if (client.queueMessageId) {
-      try {
-        queueMsg = await channel.messages.fetch(client.queueMessageId);
-      } catch {
-        client.queueMessageId = null;
-      }
-    }
-
-    // If we didn't fetch a message, check the channel for existing queue messages
-    if (!queueMsg) {
-      const messages = await channel.messages.fetch({ limit: 50 });
-      queueMsg = messages.find(m => m.content === '**NHL ’95 Game Queue**');
-    }
-
-    // If we found an existing queue message, edit it
-    if (queueMsg) {
-      await queueMsg.edit({ embeds: [embed], components: [buildQueueButtons()] });
-      client.queueMessageId = queueMsg.id;
-      return;
-    }
-
-    // Otherwise, create a new persistent queue message
-    const newMsg = await channel.send({ content: '**NHL ’95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
-    client.queueMessageId = newMsg.id;
-
-  } catch (err) {
-    console.error('❌ Failed to send/update queue message:', err);
-  }
-}
-
 // ----------------- Queue Embed -----------------
 async function buildQueueEmbed(client) {
   if (queue.length === 0) {
@@ -80,12 +43,11 @@ async function buildQueueEmbed(client) {
       let statusEmoji = '';
       if (u.status === 'pending') statusEmoji = '🟡';
       else if (u.status === 'acknowledged') statusEmoji = '✅';
-      const displayElo = u.elo || 1500;
-      return `${i + 1}. ${u.name} [${displayElo}] ${statusEmoji}`;
+      return `${i + 1}. ${u.name} [${u.elo || 1500}] ${statusEmoji}`;
     })
     .join('\n');
 
-  // Build pending pairs display (use pendingPairId to pair correctly)
+  // pending matches display
   const pendingPlayers = queue.filter(u => u.status === 'pending' && u.pendingPairId);
   let pendingDesc = '';
   const seen = new Set();
@@ -93,9 +55,7 @@ async function buildQueueEmbed(client) {
     if (seen.has(p.id)) continue;
     const partner = queue.find(x => x.id === p.pendingPairId);
     if (!partner) continue;
-    const pEmoji = p.status === 'pending' ? '🟡' : '✅';
-    const partnerEmoji = partner.status === 'pending' ? '🟡' : '✅';
-    pendingDesc += `- ${p.name} [${p.elo || 1500}] ${pEmoji} vs ${partner.name} [${partner.elo || 1500}] ${partnerEmoji}\n`;
+    pendingDesc += `- ${p.name} [${p.elo || 1500}] vs ${partner.name} [${partner.elo || 1500}]\n`;
     seen.add(p.id);
     seen.add(partner.id);
   }
@@ -111,7 +71,40 @@ async function buildQueueEmbed(client) {
   return embed;
 }
 
-// ----------------- DM Pending -----------------
+// ----------------- Send/Update Queue -----------------
+async function sendOrUpdateQueueMessage(client) {
+  try {
+    const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+    const embed = await buildQueueEmbed(client);
+
+    let queueMsg = null;
+
+    if (queueMessageId) {
+      try {
+        queueMsg = await channel.messages.fetch(queueMessageId);
+      } catch {
+        queueMessageId = null;
+      }
+    }
+
+    if (!queueMsg) {
+      const messages = await channel.messages.fetch({ limit: 50 });
+      queueMsg = messages.find(m => m.content === '**NHL ’95 Game Queue**');
+    }
+
+    if (queueMsg) {
+      await queueMsg.edit({ embeds: [embed], components: [buildQueueButtons()] });
+      queueMessageId = queueMsg.id;
+    } else {
+      const newMsg = await channel.send({ content: '**NHL ’95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
+      queueMessageId = newMsg.id;
+    }
+  } catch (err) {
+    console.error('❌ Failed to send/update queue message:', err);
+  }
+}
+
+// ----------------- Pending DM -----------------
 async function sendPendingDM(client, player1, player2) {
   const nhlEmojiMap = getNHLEmojiMap();
   const teams = Object.keys(nhlEmojiMap);
@@ -143,7 +136,7 @@ async function sendPendingDM(client, player1, player2) {
       const user = await client.users.fetch(p.id);
       await user.send({ embeds: [dmEmbed], components: [buildAckButtons(p.id)] });
     } catch (err) {
-      console.error('❌ Failed to send DM for acknowledgment to', p.id, err);
+      console.error('❌ Failed DM to', p.id, err);
       p.status = 'waiting';
       if (p.pendingPairId) {
         const partner = queue.find(q => q.id === p.pendingPairId);
@@ -172,7 +165,7 @@ async function sendPendingDM(client, player1, player2) {
   await sendOrUpdateQueueMessage(client);
 }
 
-// ----------------- Pairing processor -----------------
+// ----------------- Process Pending -----------------
 async function processPendingMatchups(client) {
   const waitingPlayers = queue.filter(u => u.status === 'waiting');
   for (let i = 0; i + 1 < waitingPlayers.length; i += 2) {
@@ -183,15 +176,13 @@ async function processPendingMatchups(client) {
   }
 }
 
-// ----------------- Interaction handler -----------------
+// ----------------- Interaction Handler -----------------
 async function handleInteraction(interaction, client) {
   if (!interaction.isButton()) return;
   const userId = interaction.user.id;
 
   try {
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => {});
-    }
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   } catch {}
 
   try {
@@ -214,38 +205,35 @@ async function handleInteraction(interaction, client) {
     const elo = rsRow ? parseInt((rsRow[38] || '1500'), 10) : 1500;
     const name = playerNickname;
 
-    // --- handle join/leave/ack/nack ---
     if (interaction.customId === 'join_queue') {
-      if (!queue.find(u => u.id === userId)) {
-        queue.push({ id: userId, name, elo, status: 'waiting' });
-      }
+      if (!queue.find(u => u.id === userId)) queue.push({ id: userId, name, elo, status: 'waiting' });
     } else if (interaction.customId === 'leave_queue') {
       queue = queue.filter(u => u.id !== userId);
     } else if (interaction.customId.startsWith('ack_play_')) {
       const player = queue.find(u => u.id === userId);
-      if (player && player.pendingPairId) {
-        player.status = 'acknowledged';
-        const partner = queue.find(u => u.id === player.pendingPairId);
-        if (partner && partner.status === 'acknowledged') {
-          const nhlEmojiMap = getNHLEmojiMap();
-          const teams = Object.keys(nhlEmojiMap);
-          let homeTeam = teams[Math.floor(Math.random() * teams.length)];
-          let awayTeam = teams[Math.floor(Math.random() * teams.length)];
-          while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
+      if (!player || !player.pendingPairId) return;
 
-          const homePlayerFirst = Math.random() < 0.5;
-          const homePlayer = homePlayerFirst ? player : partner;
-          const awayPlayer = homePlayerFirst ? partner : player;
+      player.status = 'acknowledged';
+      const partner = queue.find(u => u.id === player.pendingPairId);
+      if (partner && partner.status === 'acknowledged') {
+        const nhlEmojiMap = getNHLEmojiMap();
+        const teams = Object.keys(nhlEmojiMap);
+        let homeTeam = teams[Math.floor(Math.random() * teams.length)];
+        let awayTeam = teams[Math.floor(Math.random() * teams.length)];
+        while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
 
-          const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
-          await ratedChannel.send(
-            `🎮 Rated Game Matchup!\n` +
-              `Away: <@${awayPlayer.id}> [${awayPlayer.elo || 1500}]: ${nhlEmojiMap[awayTeam]}\n` +
-              `Home: <@${homePlayer.id}> [${homePlayer.elo || 1500}]: ${nhlEmojiMap[homeTeam]}`
-          );
+        const homePlayerFirst = Math.random() < 0.5;
+        const homePlayer = homePlayerFirst ? player : partner;
+        const awayPlayer = homePlayerFirst ? partner : player;
 
-          queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
-        }
+        const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
+        await ratedChannel.send(
+          `🎮 Rated Game Matchup!\n` +
+            `Away: <@${awayPlayer.id}> [${awayPlayer.elo || 1500}]: ${nhlEmojiMap[awayTeam]}\n` +
+            `Home: <@${homePlayer.id}> [${homePlayer.elo || 1500}]: ${nhlEmojiMap[homeTeam]}`
+        );
+
+        queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
       }
     } else if (interaction.customId.startsWith('ack_decline_')) {
       const player = queue.find(u => u.id === userId);
@@ -267,30 +255,23 @@ async function handleInteraction(interaction, client) {
 
     await processPendingMatchups(client);
     await sendOrUpdateQueueMessage(client);
-
   } catch (err) {
     console.error('❌ Error handling interaction:', err);
   }
 }
 
-// ----------------- Reset -----------------
+// ----------------- Reset Queue Channel -----------------
 async function resetQueueChannel(client) {
   try {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const messages = await channel.messages.fetch({ limit: 50 });
-
     for (const msg of messages.values()) {
-      try { await msg.delete(); } catch {}
+      if (msg.content === '**NHL ’95 Game Queue**') await msg.delete().catch(() => {});
     }
-
-    client.queueMessageId = null; // ✅ ensure only one queue message exists
     queue = [];
-
-    console.log('🧹 Queue channel reset; all old messages removed');
-
-    await sendOrUpdateQueueMessage(client); // send single persistent message
-    await processPendingMatchups(client);
-
+    queueMessageId = null;
+    await sendOrUpdateQueueMessage(client);
+    console.log('🧹 Queue channel reset; single queue message created');
   } catch (err) {
     console.error('❌ Error resetting queue channel:', err);
   }
