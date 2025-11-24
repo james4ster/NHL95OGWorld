@@ -96,20 +96,22 @@ async function buildQueueEmbed(client) {
 }
 
 // ----------------- DM Pending -----------------
-async function sendPendingDM(client, player1, player2, teams) {
+async function sendPendingDM(client, player1, player2) {
   const nhlEmojiMap = getNHLEmojiMap();
-  const [homeTeam, awayTeam] = teams; // teams passed in to keep consistent
 
-  // randomly decide which player is home/away for DM preview
+  // Use teams already stored (assigned in processPendingMatchups)
+  const homeTeam = player1.homeTeam;
+  const awayTeam = player1.awayTeam;
+
   const homePlayerFirst = Math.random() < 0.5;
   const homePlayer = homePlayerFirst ? player1 : player2;
   const awayPlayer = homePlayerFirst ? player2 : player1;
 
-  // mark pair metadata so we can match acks
-  homePlayer.status = 'pending';
-  homePlayer.pendingPairId = awayPlayer.id;
-  awayPlayer.status = 'pending';
-  awayPlayer.pendingPairId = homePlayer.id;
+  player1.status = 'pending';
+  player2.status = 'pending';
+
+  player1.pendingPairId = player2.id;
+  player2.pendingPairId = player1.id;
 
   const dmEmbed = new EmbedBuilder()
     .setTitle('🎮 Matchup Pending Acknowledgment')
@@ -127,19 +129,14 @@ async function sendPendingDM(client, player1, player2, teams) {
       await user.send({ embeds: [dmEmbed], components: [buildAckButtons(p.id)] });
     } catch (err) {
       console.error('❌ Failed to send DM for acknowledgment to', p.id, err);
-      // revert to waiting
+      // revert if failed
       p.status = 'waiting';
-      if (p.pendingPairId) {
-        const partner = queue.find(q => q.id === p.pendingPairId);
-        if (partner) {
-          partner.status = 'waiting';
-          delete partner.pendingPairId;
-        }
-      }
+      const partner = queue.find(q => q.id === p.pendingPairId);
+      if (partner) partner.status = 'waiting';
       delete p.pendingPairId;
     }
 
-    // Timeout fallback
+    // timeout to revert pending if no ack
     setTimeout(() => {
       if (p.status === 'pending') {
         const partner = queue.find(q => q.id === p.pendingPairId);
@@ -155,8 +152,8 @@ async function sendPendingDM(client, player1, player2, teams) {
   }
 
   await sendOrUpdateQueueMessage(client);
-  return { homePlayer, awayPlayer, homeTeam, awayTeam };
 }
+
 
 // ----------------- Pairing processor -----------------
 async function processPendingMatchups(client) {
@@ -169,14 +166,28 @@ async function processPendingMatchups(client) {
     const p2 = waitingPlayers[i + 1];
     if (p1.status !== 'waiting' || p2.status !== 'waiting') continue;
 
-    // Pick random teams once and pass to DM
+    // Pick random teams once for the pair
     let homeTeam = teams[Math.floor(Math.random() * teams.length)];
     let awayTeam = teams[Math.floor(Math.random() * teams.length)];
     while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
 
-    await sendPendingDM(client, p1, p2, [homeTeam, awayTeam]);
+    // Store the teams in the player objects so both DM and rated game use the same teams
+    p1.homeTeam = homeTeam;
+    p1.awayTeam = awayTeam;
+    p2.homeTeam = homeTeam;
+    p2.awayTeam = awayTeam;
+
+    // Mark them as pending and store pair info
+    p1.status = 'pending';
+    p2.status = 'pending';
+    p1.pendingPairId = p2.id;
+    p2.pendingPairId = p1.id;
+
+    // Send DM using stored teams
+    await sendPendingDM(client, p1, p2);
   }
 }
+
 
 // ----------------- Interaction handler -----------------
 async function handleInteraction(interaction, client) {
