@@ -33,21 +33,33 @@ async function sendOrUpdateQueueMessage(client) {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const embed = await buildQueueEmbed(client);
 
-    // If we have an id, try to fetch and edit; otherwise create new.
+    // Try to fetch the message by ID first
+    let queueMsg;
     if (client.queueMessageId) {
       try {
-        const existing = await channel.messages.fetch(client.queueMessageId);
-        await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
-        return;
+        queueMsg = await channel.messages.fetch(client.queueMessageId);
       } catch {
-        console.warn('❗ Previous queue message missing; creating a new queue message.');
         client.queueMessageId = null;
       }
     }
 
-    // Create a fresh persistent queue message
+    // If we didn't fetch a message, check the channel for existing queue messages
+    if (!queueMsg) {
+      const messages = await channel.messages.fetch({ limit: 50 });
+      queueMsg = messages.find(m => m.content === '**NHL ’95 Game Queue**');
+    }
+
+    // If we found an existing queue message, edit it
+    if (queueMsg) {
+      await queueMsg.edit({ embeds: [embed], components: [buildQueueButtons()] });
+      client.queueMessageId = queueMsg.id;
+      return;
+    }
+
+    // Otherwise, create a new persistent queue message
     const newMsg = await channel.send({ content: '**NHL ’95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
     client.queueMessageId = newMsg.id;
+
   } catch (err) {
     console.error('❌ Failed to send/update queue message:', err);
   }
