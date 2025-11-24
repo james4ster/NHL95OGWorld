@@ -28,40 +28,24 @@ function buildAckButtons(playerId) {
 
 // ----------------- Safe queue message send/edit -----------------
 async function sendOrUpdateQueueMessage(client) {
-  const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-  const embed = await buildQueueEmbed(client);
+  try {
+    const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+    const embed = await buildQueueEmbed(client);
 
-  let existingMsg = null;
-
-  // Try to fetch existing queue message
-  if (client.queueMessageId) {
-    try {
-      existingMsg = await channel.messages.fetch(client.queueMessageId);
-    } catch {
-      client.queueMessageId = null; // Not found
+    if (client.queueMessageId) {
+      const existing = await channel.messages.fetch(client.queueMessageId).catch(() => null);
+      if (existing) {
+        await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
+        return;
+      }
     }
-  }
 
-  // If no ID, try to find by content
-  if (!existingMsg) {
-    const fetched = await channel.messages.fetch({ limit: 50 });
-    const queueMsgs = fetched.filter(m => m.content?.includes('NHL ’95 Game Queue'));
-    if (queueMsgs.size > 0) {
-      existingMsg = queueMsgs.first();
-      client.queueMessageId = existingMsg.id;
-
-      // Delete duplicates if any
-      queueMsgs.forEach(m => {
-        if (m.id !== existingMsg.id) m.delete().catch(() => {});
-      });
-    }
-  }
-
-  if (existingMsg) {
-    await existingMsg.edit({ embeds: [embed], components: [buildQueueButtons()] });
-  } else {
+    // Only create a new message if no valid ID exists
     const newMsg = await channel.send({ content: '**NHL ’95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
     client.queueMessageId = newMsg.id;
+
+  } catch (err) {
+    console.error('❌ Failed to send/update queue message:', err);
   }
 }
 
