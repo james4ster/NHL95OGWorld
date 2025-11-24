@@ -1,3 +1,9 @@
+/*========
+This version of queue.js is the working version of the single queue window.
+- The ack messages work
+- The rated-game channel post works correctly
+*/
+
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import { google } from 'googleapis';
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
