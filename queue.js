@@ -117,6 +117,8 @@ async function processPendingMatchups(client) {
   const nhlEmojiMap = getNHLEmojiMap();
   const teams = Object.keys(nhlEmojiMap);
 
+  const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+
   for (let i = 0; i + 1 < waitingPlayers.length; i += 2) {
     const p1 = waitingPlayers[i];
     const p2 = waitingPlayers[i + 1];
@@ -140,7 +142,6 @@ async function processPendingMatchups(client) {
     p2.pendingPairId = p1.id;
 
     // Send acknowledgment message in queue channel
-    const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const pendingEmbed = new EmbedBuilder()
       .setTitle('🎮 Matchup Pending Acknowledgment')
       .setDescription(
@@ -155,9 +156,10 @@ async function processPendingMatchups(client) {
     const ackRow1 = buildAckButtons(p1.id, `<@${p1.id}>`);
     const ackRow2 = buildAckButtons(p2.id, `<@${p2.id}>`);
     await channel.send({ embeds: [pendingEmbed], components: [ackRow1, ackRow2] });
-
-    await sendOrUpdateQueueMessage(client);
   }
+
+  // Update the main queue window only once
+  await sendOrUpdateQueueMessage(client);
 }
 
 // ----------------- Interaction handler -----------------
