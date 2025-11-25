@@ -125,22 +125,23 @@ async function buildQueueEmbed(client) {
 let processingMatchups = false; // GLOBAL LOCK
 
 async function processPendingMatchups(client) {
-  if (processingMatchups) return; // ⛔ already running
-  processingMatchups = true;
+  if (processingMatchups) return;        // ⛔ already running
+  processingMatchups = true;             // 🔒 acquire lock
 
   try {
-    const waitingPlayers = queue.filter(u => u.status === 'waiting' && !u.matchupMessageSent);
-    if (waitingPlayers.length < 2) return; // nothing to pair
-
+    const waitingPlayers = queue.filter(u => u.status === 'waiting');
     const nhlEmojiMap = getNHLEmojiMap();
     const teams = Object.keys(nhlEmojiMap);
+
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
 
     for (let i = 0; i + 1 < waitingPlayers.length; i += 2) {
       const p1 = waitingPlayers[i];
       const p2 = waitingPlayers[i + 1];
 
-      if (p1.matchupMessageSent || p2.matchupMessageSent) continue; // skip already sent
+      // Skip if already paired / ack message already sent
+      if (p1.status !== 'waiting' || p2.status !== 'waiting') continue;
+      if (p1.matchupMessageSent || p2.matchupMessageSent) continue;
 
       // Mark pending immediately
       p1.status = 'pending';
@@ -156,36 +157,63 @@ async function processPendingMatchups(client) {
       while (awayTeam === homeTeam) {
         awayTeam = teams[Math.floor(Math.random() * teams.length)];
       }
-
       p1.homeTeam = homeTeam;
       p1.awayTeam = awayTeam;
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
+      // Build embed
       const pendingEmbed = new EmbedBuilder()
         .setTitle('🎮 Matchup Pending Acknowledgment')
-        .setDescription(
-          `🚌 Away\n${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n\n` +
-          `🏠 Home\n${p1.name} [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}\n\n` +
-          `Each player, please acknowledge using the buttons below.`
-        )
+        .setDescription('Each player, please acknowledge using the buttons below.')
         .setColor('#ffff00')
         .setTimestamp();
 
-      const awayRow = buildAckButtons(p2.id, nhlEmojiMap[p2.awayTeam]);
-      const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
+      // Build button rows with Discord tag above buttons
+      const awayRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`ack_play_${p2.id}`)
+          .setLabel('Play')
+          .setEmoji(nhlEmojiMap[p2.awayTeam])
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`ack_decline_${p2.id}`)
+          .setLabel("Don't Play")
+          .setEmoji(nhlEmojiMap[p2.awayTeam])
+          .setStyle(ButtonStyle.Danger)
+      );
 
+      const homeRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`ack_play_${p1.id}`)
+          .setLabel('Play')
+          .setEmoji(nhlEmojiMap[p1.homeTeam])
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`ack_decline_${p1.id}`)
+          .setLabel("Don't Play")
+          .setEmoji(nhlEmojiMap[p1.homeTeam])
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      // Send single message with proper layout
       await channel.send({
         embeds: [pendingEmbed],
-        components: [awayRow, homeRow],
+        content: 
+          `🚌 Away: <@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n` +
+          `🏠 Home: <@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}`,
+        components: [awayRow, homeRow]
       });
     }
 
+    // Update queue UI once
     await sendOrUpdateQueueMessage(client);
+
   } finally {
-    processingMatchups = false;
+    processingMatchups = false;  // 🔓 release lock
   }
 }
+
 
 
 
@@ -292,12 +320,11 @@ async function resetQueueChannel(client, options = { clearMemory: true }) {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const messages = await channel.messages.fetch({ limit: 50 });
 
-    // Delete all old messages
     for (const msg of messages.values()) {
       try { await msg.delete(); } catch {}
     }
 
-    // Only reset in-memory queue if flag is true
+    // Only reset queue array if explicitly requested
     if (options.clearMemory) {
       queue.forEach(u => {
         delete u.pendingPairId;
@@ -306,11 +333,10 @@ async function resetQueueChannel(client, options = { clearMemory: true }) {
       queue.length = 0;
     }
 
-    console.log('🧹 Queue channel reset; old messages removed');
-
     // Rebuild queue window
     await sendOrUpdateQueueMessage(client);
 
+    console.log('🧹 Queue channel reset; old messages removed');
   } catch (err) {
     console.error('❌ Error resetting queue channel:', err);
   }

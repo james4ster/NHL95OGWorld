@@ -141,18 +141,16 @@ client.on('interactionCreate', async (interaction) => {
   }
 })();
 
-// === Ensure queue channel flushed after bot ready ===
 client.once('ready', async () => {
   try {
     console.log('🧹 Startup flush: clearing old messages in queue channel');
 
-    const { queue, resetQueueChannel } = await import('./queue.js');
+    const { resetQueueChannel } = await import('./queue.js');
 
-    // Only clear old messages in the channel, keep queue intact
-    await resetQueueChannel(client, { clearMemory: false }); // <-- pass a flag so queue array isn't emptied
+    // Only delete messages in the channel, do NOT touch in-memory queue
+    await resetQueueChannel(client, { clearMemory: false });
 
-    console.log('✅ Queue channel flushed, in-memory queue ready for new players');
-
+    console.log('✅ Queue channel flushed, in-memory queue preserved');
   } catch (err) {
     console.error('❌ Error during ready queue flush:', err);
   }
