@@ -139,17 +139,15 @@ async function processPendingMatchups(client) {
       const p1 = waitingPlayers[i];
       const p2 = waitingPlayers[i + 1];
 
-      // Skip if already paired / ack message already sent
+      // Skip if already paired
       if (p1.status !== 'waiting' || p2.status !== 'waiting') continue;
       if (p1.matchupMessageSent || p2.matchupMessageSent) continue;
 
-      // Mark pending immediately
+      // 🔥 Mark them as pending immediately
       p1.status = 'pending';
       p2.status = 'pending';
       p1.pendingPairId = p2.id;
       p2.pendingPairId = p1.id;
-      p1.matchupMessageSent = true;
-      p2.matchupMessageSent = true;
 
       // Pick random teams
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
@@ -157,19 +155,20 @@ async function processPendingMatchups(client) {
       while (awayTeam === homeTeam) {
         awayTeam = teams[Math.floor(Math.random() * teams.length)];
       }
+
       p1.homeTeam = homeTeam;
       p1.awayTeam = awayTeam;
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
-      // Build embed
-      const pendingEmbed = new EmbedBuilder()
+      // Embed description with instructions
+      const embed = new EmbedBuilder()
         .setTitle('🎮 Matchup Pending Acknowledgment')
         .setDescription('Each player, please acknowledge using the buttons below.')
         .setColor('#ffff00')
         .setTimestamp();
 
-      // Build button rows with Discord tag above buttons
+      // Build buttons for Away player (p2)
       const awayRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`ack_play_${p2.id}`)
@@ -183,6 +182,7 @@ async function processPendingMatchups(client) {
           .setStyle(ButtonStyle.Danger)
       );
 
+      // Build buttons for Home player (p1)
       const homeRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`ack_play_${p1.id}`)
@@ -196,26 +196,30 @@ async function processPendingMatchups(client) {
           .setStyle(ButtonStyle.Danger)
       );
 
-      // Send single message with proper layout
+      // Send message with proper layout
       await channel.send({
-        embeds: [pendingEmbed],
-        content: 
-          `🚌 Away: <@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n` +
-          `🏠 Home: <@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}`,
-        components: [awayRow, homeRow]
+        embeds: [embed],
+        content:
+          `\n🚌 Away\n<@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n`, // Away player info
+        components: [awayRow]
       });
+
+      await channel.send({
+        content: `──────────────────────────\n\n🏠 Home\n<@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}\n`, // Home player info
+        components: [homeRow]
+      });
+
+      p1.matchupMessageSent = true;
+      p2.matchupMessageSent = true;
     }
 
-    // Update queue UI once
+    // Update main queue window once
     await sendOrUpdateQueueMessage(client);
 
   } finally {
     processingMatchups = false;  // 🔓 release lock
   }
 }
-
-
-
 
 // ----------------- Interaction handler -----------------
 async function handleInteraction(interaction, client) {
