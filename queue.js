@@ -1,6 +1,6 @@
 // queue.js
 /*
-Persistent NHL ’95 Queue System
+Persistent NHL '95 Queue System
 - Fetches nicknames & ELO from Google Sheets
 - Pairing players for matches
 - Play / Don't Play buttons with proper handling
@@ -43,7 +43,7 @@ function buildAckButtons(playerId, emoji) {
 async function buildQueueEmbed() {
   if (queue.length === 0) {
     return new EmbedBuilder()
-      .setTitle('🎮 NHL ’95 Game Queue')
+      .setTitle('🎮 NHL '95 Game Queue')
       .setDescription('_Queue is empty_')
       .setColor('#0099ff')
       .setTimestamp();
@@ -84,7 +84,7 @@ async function buildQueueEmbed() {
   }
 
   const embed = new EmbedBuilder()
-    .setTitle('🎮 NHL ’95 Game Queue')
+    .setTitle('🎮 NHL '95 Game Queue')
     .setDescription(description)
     .setColor('#0099ff')
     .setTimestamp();
@@ -109,12 +109,12 @@ async function sendOrUpdateQueueMessage(client) {
       await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
     } else {
       const messages = await channel.messages.fetch({ limit: 10 });
-      existing = messages.find(m => m.content === '**NHL ’95 Game Queue**');
+      existing = messages.find(m => m.content === '**NHL '95 Game Queue**');
       if (existing) {
         client.queueMessageId = existing.id;
         await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
       } else {
-        const newMsg = await channel.send({ content: '**NHL ’95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
+        const newMsg = await channel.send({ content: '**NHL '95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
         client.queueMessageId = newMsg.id;
       }
     }
@@ -211,9 +211,6 @@ async function processPendingMatchups(client) {
   }
 }
 
-
-
-// ----------------- Interaction handler -----------------
 // ----------------- Interaction handler -----------------
 async function handleInteraction(interaction, client) {
   if (!interaction.isButton()) return;
@@ -257,6 +254,13 @@ async function handleInteraction(interaction, client) {
 
     // --- Acknowledge Play / Decline ---
     if (interaction.customId.startsWith('ack_play_') || interaction.customId.startsWith('ack_decline_')) {
+      const targetPlayerId = interaction.customId.split('_')[2];
+
+      // Only allow the tagged player to click their own button
+      if (userId !== targetPlayerId) {
+        return;
+      }
+
       const player = queue.find(u => u.id === userId);
       if (!player || !player.pendingPairId) return;
       const partner = queue.find(u => u.id === player.pendingPairId);
@@ -266,25 +270,17 @@ async function handleInteraction(interaction, client) {
 
       // --- Play ---
       if (interaction.customId.startsWith('ack_play_')) {
-        player.status = 'acknowledged';
         player.acknowledged = true;
 
-        // Disable only this button
-        const disabledRow = interaction.message.components.map(row =>
-          new ActionRowBuilder().addComponents(
-            row.components.map(btn =>
-              new ButtonBuilder()
-                .setCustomId(btn.customId)
-                .setLabel(btn.label)
-                .setEmoji(btn.emoji)
-                .setStyle(btn.style)
-                .setDisabled(btn.customId === interaction.customId)
-            )
+        // Disable both buttons on this message
+        const disabledRow = new ActionRowBuilder().addComponents(
+          interaction.message.components[0].components.map(btn =>
+            ButtonBuilder.from(btn).setDisabled(true)
           )
         );
 
-        await interaction.editReply({ components: disabledRow });
-        await sendOrUpdateQueueMessage(client); // Updates queue embed
+        await interaction.editReply({ components: [disabledRow] });
+        await sendOrUpdateQueueMessage(client); // Updates queue embed with green checkmark
 
         // If partner has also acknowledged, finalize matchup
         if (partner && partner.acknowledged) {
@@ -333,7 +329,34 @@ async function handleInteraction(interaction, client) {
   }
 }
 
+// ----------------- Initialize Queue on Bot Startup -----------------
+async function initializeQueue(client) {
+  try {
+    console.log('🔄 Initializing queue system...');
 
+    // Clear in-memory queue
+    queue.length = 0;
+
+    // Clear the queue channel
+    const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+    const messages = await channel.messages.fetch({ limit: 100 });
+
+    for (const msg of messages.values()) {
+      try { 
+        await msg.delete(); 
+      } catch (err) {
+        console.error('Error deleting message:', err);
+      }
+    }
+
+    // Send fresh queue window
+    await sendOrUpdateQueueMessage(client);
+
+    console.log('✅ Queue system initialized - channel cleared, empty queue window created');
+  } catch (err) {
+    console.error('❌ Error initializing queue:', err);
+  }
+}
 
 // ----------------- Reset -----------------
 async function resetQueueChannel(client, options = { clearMemory: true }) {
@@ -360,4 +383,4 @@ async function resetQueueChannel(client, options = { clearMemory: true }) {
   }
 }
 
-export { queue, sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel, processPendingMatchups };
+export { queue, sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel, processPendingMatchups, initializeQueue };
