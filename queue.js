@@ -135,29 +135,41 @@ async function processPendingMatchups(client) {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
 
     for (let i = 0; i + 1 < waitingPlayers.length; i += 2) {
-      const p1 = waitingPlayers[i]; // Home
+      const p1 = waitingPlayers[i];     // Home
       const p2 = waitingPlayers[i + 1]; // Away
 
-      // skip if either already has a pending matchup message
-      if (p1.matchupMessage || p2.matchupMessage) continue;
+      // 🔥 Prevent duplicate ack messages
+      if (p1.matchupMessageSent || p2.matchupMessageSent) continue;
 
-      // Mark as pending immediately
+      // Unique pair ID so both players share it
+      const pairId = `${p1.id}_${p2.id}_${Date.now()}`;
+
+      // Mark players as pending
       p1.status = 'pending';
       p2.status = 'pending';
-      p1.pendingPairId = p2.id;
-      p2.pendingPairId = p1.id;
+
+      p1.pendingPairId = pairId;
+      p2.pendingPairId = pairId;
+
+      p1.ack_home = false;
+      p2.ack_away = false;
 
       // Pick random teams
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
       let awayTeam = teams[Math.floor(Math.random() * teams.length)];
-      while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
+      while (awayTeam === homeTeam) {
+        awayTeam = teams[Math.floor(Math.random() * teams.length)];
+      }
 
       p1.homeTeam = homeTeam;
       p1.awayTeam = awayTeam;
+
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
-      // --- Away team message ---
+      //
+      // ---------- AWAY MESSAGE ----------
+      //
       const awayContent =
         `🎮 Matchup Pending Acknowledgment\n` +
         `Each player, please acknowledge using the buttons below.\n\n` +
@@ -165,12 +177,12 @@ async function processPendingMatchups(client) {
 
       const awayRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`ack_play_${p2.id}`)
+          .setCustomId(`ack_play_${p2.id}_${pairId}`)
           .setLabel('Play')
           .setEmoji(nhlEmojiMap[p2.awayTeam])
           .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
-          .setCustomId(`ack_decline_${p2.id}`)
+          .setCustomId(`ack_dont_${p2.id}_${pairId}`)
           .setLabel("Don't Play")
           .setEmoji(nhlEmojiMap[p2.awayTeam])
           .setStyle(ButtonStyle.Danger)
@@ -180,21 +192,26 @@ async function processPendingMatchups(client) {
         content: awayContent,
         components: [awayRow]
       });
-      p2.matchupMessage = awayMsg;
 
-      // --- Home team message ---
+      // Store message so we can delete it later
+      p2.ackMessage = awayMsg;
+
+
+      //
+      // ---------- HOME MESSAGE ----------
+      //
       const homeContent =
         `──────────────────────────\n\n` +
         `🏠 Home\n<@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}`;
 
       const homeRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`ack_play_${p1.id}`)
+          .setCustomId(`ack_play_${p1.id}_${pairId}`)
           .setLabel('Play')
           .setEmoji(nhlEmojiMap[p1.homeTeam])
           .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
-          .setCustomId(`ack_decline_${p1.id}`)
+          .setCustomId(`ack_dont_${p1.id}_${pairId}`)
           .setLabel("Don't Play")
           .setEmoji(nhlEmojiMap[p1.homeTeam])
           .setStyle(ButtonStyle.Danger)
@@ -204,10 +221,17 @@ async function processPendingMatchups(client) {
         content: homeContent,
         components: [homeRow]
       });
-      p1.matchupMessage = homeMsg;
+
+      p1.ackMessage = homeMsg;
+
+      //
+      // Prevent duplicate matchups being sent
+      //
+      p1.matchupMessageSent = true;
+      p2.matchupMessageSent = true;
     }
 
-    // Update the main queue window once
+    // Update queue window after processing
     await sendOrUpdateQueueMessage(client);
 
   } finally {
@@ -216,139 +240,158 @@ async function processPendingMatchups(client) {
 }
 
 
+
 // ----------------- Interaction handler -----------------
-async function handleInteraction(interaction, client) {
-  if (!interaction.isButton()) return;
-  const userId = interaction.user.id;
+async function handleInteraction(interaction) {
+    try {
+        if (!interaction.isButton()) return;
 
-  try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
-  } catch {}
+        const id = interaction.customId;
 
-  try {
-    // Fetch player data (same as before)
-    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-    const auth = new google.auth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
-    const sheets = google.sheets({ version: 'v4', auth });
+        //
+        // ------------------------------------------
+        // JOIN QUEUE
+        // ------------------------------------------
+        //
+        if (id.startsWith("queue_join_")) {
+            const userId = interaction.user.id;
 
-    const [pmRes, rsRes] = await Promise.all([
-      sheets.spreadsheets.values.get({ spreadsheetId: process.env.SPREADSHEET_ID, range: 'PlayerMaster!A:C' }),
-      sheets.spreadsheets.values.get({ spreadsheetId: process.env.SPREADSHEET_ID, range: 'RawStandings!A:AM' }),
-    ]);
+            if (queue.find(q => q.userId === userId)) {
+                return interaction.reply({ content: "You are already in the queue.", ephemeral: true });
+            }
 
-    const playerMasterData = pmRes.data.values || [];
-    const rawStandingsData = rsRes.data.values || [];
+            const name = interaction.member.displayName || interaction.user.username;
 
-    const pmRow = playerMasterData.find(r => r[0]?.trim() === userId);
-    const playerNickname = pmRow ? pmRow[2]?.trim() : interaction.user.username;
+            queue.push({
+                userId,
+                name,
+                mmr: 0,
+                matchupMessageSent: false,
+                pendingPairId: null,
+                ack_home: false,
+                ack_away: false
+            });
 
-    const rsRow = rawStandingsData.find(r => r[0]?.trim() === playerNickname);
-    if (!rsRow) {
-      console.warn('⚠️ Could not find ELO for player:', playerNickname);
-      return;
-    }
-    const elo = parseInt(rsRow[38], 10);
-    const name = playerNickname;
-
-    // --- Queue Join/Leave ---
-    if (interaction.customId === 'join_queue') {
-      if (!queue.find(u => u.id === userId)) {
-        queue.push({ id: userId, name, elo, status: 'waiting' });
-      }
-      await sendOrUpdateQueueMessage(client);
-      await processPendingMatchups(client);
-      return;
-    }
-
-    if (interaction.customId === 'leave_queue') {
-      const leavingPlayer = queue.find(u => u.id === userId);
-      if (leavingPlayer) {
-        if (leavingPlayer.matchupMessage) {
-          try { await leavingPlayer.matchupMessage.delete(); } catch {}
-        }
-        const partner = queue.find(u => u.id === leavingPlayer.pendingPairId);
-        if (partner && partner.matchupMessage) {
-          try { await partner.matchupMessage.delete(); } catch {}
-          delete partner.matchupMessage;
-          partner.status = 'waiting';
-          delete partner.pendingPairId;
-        }
-      }
-      queue = queue.filter(u => u.id !== userId);
-      await sendOrUpdateQueueMessage(client);
-      return;
-    }
-
-    // --- Ack buttons ---
-    if (interaction.customId.startsWith('ack_play_') || interaction.customId.startsWith('ack_decline_')) {
-      // Restrict buttons to correct player
-      if (!interaction.customId.endsWith(userId)) {
-        await interaction.reply({ content: "❌ This button is not for you.", ephemeral: true });
-        return;
-      }
-
-      const player = queue.find(u => u.id === userId);
-      if (!player || !player.pendingPairId) return;
-      const partner = queue.find(u => u.id === player.pendingPairId);
-
-      if (interaction.customId.startsWith('ack_play_')) {
-        player.status = 'acknowledged';
-        player.acknowledged = true;
-
-        // disable this player's buttons
-        const disabledRow = interaction.message.components.map(row => {
-          row.components.forEach(btn => btn.setDisabled(true));
-          return row;
-        });
-        await interaction.update({ components: disabledRow });
-
-        // update queue window to show checkmark
-        await sendOrUpdateQueueMessage(client);
-
-        // finalize if both acknowledged
-        if (partner && partner.acknowledged) {
-          try { if (player.matchupMessage) await player.matchupMessage.delete(); } catch {}
-          try { if (partner.matchupMessage) await partner.matchupMessage.delete(); } catch {}
-
-          const nhlEmojiMap = getNHLEmojiMap();
-          const homeTeam = player.homeTeam;
-          const awayTeam = player.awayTeam;
-          const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
-
-          await ratedChannel.send(
-            `🎮 Rated Game Matchup!\n` +
-            `Away: <@${partner.id}> [${partner.elo}] : ${nhlEmojiMap[awayTeam]}\n` +
-            `Home: <@${player.id}> [${player.elo}] : ${nhlEmojiMap[homeTeam]}`
-          );
-
-          queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
-          await sendOrUpdateQueueMessage(client);
-        }
-      }
-
-      if (interaction.customId.startsWith('ack_decline_')) {
-        queue = queue.filter(u => u.id !== userId);
-
-        if (partner) {
-          partner.status = 'waiting';
-          delete partner.pendingPairId;
-          delete partner.matchupMessageSent;
-          try { if (partner.matchupMessage) await partner.matchupMessage.delete(); } catch {}
-          partner.matchupMessage = null;
+            await interaction.reply({ content: "You've joined the queue!", ephemeral: true });
+            updateQueueWindow(interaction.client);
+            processPendingMatchups(interaction.client);
+            return;
         }
 
-        try { if (player.matchupMessage) await player.matchupMessage.delete(); } catch {}
-        await sendOrUpdateQueueMessage(client);
-      }
+        //
+        // ------------------------------------------
+        // LEAVE QUEUE
+        // ------------------------------------------
+        //
+        if (id.startsWith("queue_leave_")) {
+            const userId = interaction.user.id;
 
-      await processPendingMatchups(client);
+            const idx = queue.findIndex(q => q.userId === userId);
+            if (idx === -1) {
+                return interaction.reply({ content: "You are not in the queue.", ephemeral: true });
+            }
+
+            // Cleanup pending data
+            queue[idx].matchupMessageSent = false;
+            queue[idx].pendingPairId = null;
+
+            queue.splice(idx, 1);
+
+            await interaction.reply({ content: "You've left the queue.", ephemeral: true });
+            updateQueueWindow(interaction.client);
+            return;
+        }
+
+        //
+        // ------------------------------------------
+        // ACKNOWLEDGE (PLAY)
+        // ------------------------------------------
+        //
+        if (id.startsWith("ack_play_")) {
+            const [_, __, userId, pairId] = id.split("_");
+
+            if (interaction.user.id !== userId) {
+                return interaction.reply({ content: "This button isn't for you.", ephemeral: true });
+            }
+
+            const players = queue.filter(q => q.pendingPairId === pairId);
+            if (players.length !== 2) {
+                return interaction.reply({ content: "Match no longer valid.", ephemeral: true });
+            }
+
+            const home = players.find(p => p.isHome);
+            const away = players.find(p => !p.isHome);
+
+            if (!home || !away) {
+                return interaction.reply({ content: "Matchup error.", ephemeral: true });
+            }
+
+            if (home.userId === userId) home.ack_home = true;
+            if (away.userId === userId) away.ack_away = true;
+
+            // Disable THIS message’s buttons
+            const disabledRows = interaction.message.components.map(row => {
+                const newRow = new ActionRowBuilder();
+                row.components.forEach(btn => {
+                    newRow.addComponents(ButtonBuilder.from(btn).setDisabled(true));
+                });
+                return newRow;
+            });
+
+            await interaction.update({ components: disabledRows });
+
+            // Show checkmark in queue window
+            updateQueueWindow(interaction.client);
+
+            // If both acknowledged — delete both ack messages
+            if (home.ack_home && away.ack_away) {
+                try {
+                    if (home.ackMessage) await home.ackMessage.delete();
+                    if (away.ackMessage) await away.ackMessage.delete();
+                } catch (e) {}
+
+                // Remove both from queue
+                queue = queue.filter(q => q.pendingPairId !== pairId);
+
+                updateQueueWindow(interaction.client);
+            }
+
+            return;
+        }
+
+        //
+        // ------------------------------------------
+        // DON'T PLAY
+        // ------------------------------------------
+        //
+        if (id.startsWith("ack_dont_")) {
+            const [_, __, userId, pairId] = id.split("_");
+
+            if (interaction.user.id !== userId) {
+                return interaction.reply({ content: "This button isn’t for you.", ephemeral: true });
+            }
+
+            const players = queue.filter(q => q.pendingPairId === pairId);
+
+            // Delete both ack messages
+            for (const p of players) {
+                try { if (p.ackMessage) await p.ackMessage.delete(); } catch (e) {}
+            }
+
+            // Remove both from queue
+            queue = queue.filter(q => q.pendingPairId !== pairId);
+
+            await interaction.reply({ content: "Match canceled. You were removed from the queue.", ephemeral: true });
+
+            updateQueueWindow(interaction.client);
+            return;
+        }
+
+    } catch (err) {
+        console.error("❌ Error handling interaction:", err);
     }
-
-
-  } catch (err) {
-    console.error('❌ Error handling interaction:', err);
-  }
 }
+
 
 // ----------------- Reset -----------------
 async function resetQueueChannel(client, options = { clearMemory: true }) {
