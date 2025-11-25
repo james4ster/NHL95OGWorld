@@ -223,45 +223,43 @@ async function handleInteraction(interaction, client) {
     }
 
     // --- Acknowledge Play / Decline ---
-    if (interaction.customId.startsWith('ack_play_') || interaction.customId.startsWith('ack_decline_')) {
-      if (!interaction.customId.endsWith(userId)) {
-        await interaction.reply({ content: "❌ This button is not for you.", ephemeral: true });
-        return;
-      }
-
-      const player = queue.find(u => u.id === userId);
-      if (!player || !player.pendingPairId) return;
-      const partner = queue.find(u => u.id === player.pendingPairId);
-
-      // --- Play ---
       if (interaction.customId.startsWith('ack_play_')) {
         player.status = 'acknowledged';
         player.acknowledged = true;
 
-        // Disable buttons
+        // Disable only the clicked button for this user
         const disabledRow = interaction.message.components.map(row => {
-          row.components.forEach(btn => btn.setDisabled(true));
+          row.components.forEach(btn => {
+            if (btn.customId === interaction.customId) btn.setDisabled(true);
+          });
           return row;
         });
         await interaction.update({ components: disabledRow });
 
+        // Update queue embed to reflect first ack
         await sendOrUpdateQueueMessage(client);
 
-        // If both acknowledged, send to rated games
+        // Check if partner has also acknowledged
         if (partner && partner.acknowledged) {
           try { if (player.matchupMessage) await player.matchupMessage.delete(); } catch {}
           try { if (partner.matchupMessage) await partner.matchupMessage.delete(); } catch {}
 
           const nhlEmojiMap = getNHLEmojiMap();
           const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
+
           await ratedChannel.send(
-            `🎮 Rated Game Matchup!\nAway: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\nHome: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}`
+            `🎮 Rated Game Matchup!\n` +
+            `🏠 Home: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}\n` +
+            `🚌 Away: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\n` +
+            `Teams: Home(${player.homeTeam}) / Away(${partner.awayTeam})`
           );
 
+          // Flush both players from queue
           queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
           await sendOrUpdateQueueMessage(client);
         }
       }
+
 
       // --- Don't Play ---
       if (interaction.customId.startsWith('ack_decline_')) {
