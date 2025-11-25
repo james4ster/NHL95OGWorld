@@ -148,7 +148,7 @@ client.once('ready', async () => {
     const { resetQueueChannel } = await import('./queue.js');
 
     // Only delete messages in the channel, do NOT touch in-memory queue
-    await resetQueueChannel(client, { clearMemory: false });
+    await resetQueueChannel(client, { clearMemory: true });
 
     console.log('✅ Queue channel flushed, in-memory queue preserved');
   } catch (err) {
