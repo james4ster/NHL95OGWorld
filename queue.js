@@ -40,7 +40,6 @@ function buildAckButtons(playerId, emoji) {
 }
 
 // ----------------- Queue Embed -----------------
-// ----------------- Queue Embed -----------------
 async function buildQueueEmbed() {
   if (queue.length === 0) {
     return new EmbedBuilder()
@@ -222,11 +221,9 @@ async function handleInteraction(interaction, client) {
     // --- Queue Join ---
     if (interaction.customId === 'join_queue') {
       const { nickname, elo } = await fetchPlayerData(userId);
-
       if (!queue.find(u => u.id === userId)) {
         queue.push({ id: userId, name: nickname, elo, status: 'waiting' });
       }
-
       await sendOrUpdateQueueMessage(client);
       await processPendingMatchups(client);
       return;
@@ -257,32 +254,38 @@ async function handleInteraction(interaction, client) {
       if (!player || !player.pendingPairId) return;
       const partner = queue.find(u => u.id === player.pendingPairId);
 
+      const nhlEmojiMap = getNHLEmojiMap();
+      const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
+
       // --- Play ---
       if (interaction.customId.startsWith('ack_play_')) {
         player.status = 'acknowledged';
         player.acknowledged = true;
 
-        // Disable only this user's Play button
-        const disabledRow = interaction.message.components.map(row => {
-          row.components.forEach(btn => {
-            if (btn.customId === interaction.customId) btn.setDisabled(true);
-          });
-          return row;
-        });
-        await interaction.update({ components: disabledRow });
+        // Rebuild ActionRow disabling only this button
+        const disabledRow = interaction.message.components.map(row =>
+          new ActionRowBuilder().addComponents(
+            row.components.map(btn =>
+              new ButtonBuilder()
+                .setCustomId(btn.customId)
+                .setLabel(btn.label)
+                .setEmoji(btn.emoji)
+                .setStyle(btn.style)
+                .setDisabled(btn.customId === interaction.customId)
+            )
+          )
+        );
 
-        // Update queue embed to reflect first ack
+        await interaction.update({ components: disabledRow });
         await sendOrUpdateQueueMessage(client);
 
-        // If partner has also acknowledged, finalize matchup
+        // If partner also acknowledged, finalize matchup
         if (partner && partner.acknowledged) {
-          // Delete both matchup messages
-          try { if (player.matchupMessage) await player.matchupMessage.delete(); } catch {}
-          try { if (partner.matchupMessage) await partner.matchupMessage.delete(); } catch {}
+          // Delete matchup messages
+          if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
+          if (partner.matchupMessage) try { await partner.matchupMessage.delete(); } catch {}
 
-          const nhlEmojiMap = getNHLEmojiMap();
-          const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
-
+          // Send matchup to rated-games channel
           await ratedChannel.send(
             `🎮 Rated Game Matchup!\n` +
             `🏠 Home: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}\n` +
@@ -298,7 +301,7 @@ async function handleInteraction(interaction, client) {
 
       // --- Don't Play ---
       if (interaction.customId.startsWith('ack_decline_')) {
-        // Delete partner's matchup message if exists
+        // Reset partner if exists
         if (partner && partner.matchupMessage) {
           try { await partner.matchupMessage.delete(); } catch {}
           partner.status = 'waiting';
@@ -322,6 +325,7 @@ async function handleInteraction(interaction, client) {
     console.error('❌ Error handling interaction:', err);
   }
 }
+
 
 
 // ----------------- Reset -----------------
