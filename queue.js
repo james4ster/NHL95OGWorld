@@ -27,16 +27,18 @@ function buildQueueButtons() {
 }
 
 // Buttons for pending matchups in queue channel
-function buildAckButtons(playerId, teamEmoji) {
+function buildAckButtons(playerId, emoji) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`play_${playerId}`)
-      .setLabel(`Play ${teamEmoji}`)
+      .setLabel('Play')
+      .setEmoji(emoji)
       .setStyle(ButtonStyle.Success),
 
     new ButtonBuilder()
       .setCustomId(`dontplay_${playerId}`)
-      .setLabel(`Don't Play ${teamEmoji}`)
+      .setLabel("Don't Play")
+      .setEmoji(emoji)
       .setStyle(ButtonStyle.Danger)
   );
 }
@@ -174,8 +176,8 @@ async function processPendingMatchups(client) {
       .setColor('#ffff00')
       .setTimestamp();
 
-      const awayRow = buildAckButtons(p2.id, `${nhlEmojiMap[p2.awayTeam]}`);
-      const homeRow = buildAckButtons(p1.id, `${nhlEmojiMap[p1.homeTeam]}`);
+      const awayRow = buildAckButtons(p2.id, nhlEmojiMap[p2.awayTeam]);
+      const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
 
       // Send message (no second call can occur now because they’re marked pending)
       await channel.send({
@@ -318,6 +320,19 @@ async function resetQueueChannel(client) {
   } catch (err) {
     console.error('❌ Error resetting queue channel:', err);
   }
+}
+
+// ----------------- Flush pending-games channel on restart -----------------
+async function clearPendingChannel(client) {
+  const channel = await client.channels.fetch(PENDING_GAMES_CHANNEL_ID);
+
+  let fetched;
+  do {
+    fetched = await channel.messages.fetch({ limit: 100 });
+    if (fetched.size > 0) {
+      await channel.bulkDelete(fetched, true);
+    }
+  } while (fetched.size === 100);
 }
 
 export { queue, sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel };
