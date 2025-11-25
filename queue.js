@@ -214,12 +214,16 @@ async function processPendingMatchups(client) {
 
 
 // ----------------- Interaction handler -----------------
+// ----------------- Interaction handler -----------------
 async function handleInteraction(interaction, client) {
   if (!interaction.isButton()) return;
   const userId = interaction.user.id;
 
   try {
-    //if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+    // Acknowledge the interaction immediately (within 3 seconds)
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
 
     // --- Queue Join ---
     if (interaction.customId === 'join_queue') {
@@ -279,7 +283,7 @@ async function handleInteraction(interaction, client) {
           )
         );
 
-        await interaction.update({ components: disabledRow });
+        await interaction.editReply({ components: disabledRow });
         await sendOrUpdateQueueMessage(client); // Updates queue embed
 
         // If partner has also acknowledged, finalize matchup
