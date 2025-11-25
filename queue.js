@@ -44,20 +44,23 @@ function buildAckButtons(playerId, discordTag) {
 async function sendOrUpdateQueueMessage(client) {
   try {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+
     const embed = await buildQueueEmbed(client);
 
+    // Fetch existing queue message if we have an ID
+    let existing = null;
     if (client.queueMessageId) {
-      const existing = await channel.messages.fetch(client.queueMessageId).catch(() => null);
-      if (existing) {
-        await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
-        return;
-      }
+      existing = await channel.messages.fetch(client.queueMessageId).catch(() => null);
     }
 
-    // Only create a new message if no valid ID exists
-    const newMsg = await channel.send({ content: '**NHL ’95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
-    client.queueMessageId = newMsg.id;
-
+    if (existing) {
+      // Only edit if message exists
+      await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
+    } else {
+      // Only create a new message if none exists
+      const newMsg = await channel.send({ content: '**NHL ’95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
+      client.queueMessageId = newMsg.id;
+    }
   } catch (err) {
     console.error('❌ Failed to send/update queue message:', err);
   }
