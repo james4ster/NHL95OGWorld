@@ -245,7 +245,6 @@ async function handleInteraction(interaction, client) {
     }
 
     await processPendingMatchups(client);
-    await sendOrUpdateQueueMessage(client);
   } catch (err) {
     console.error('❌ Error handling interaction:', err);
   }
