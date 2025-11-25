@@ -184,6 +184,7 @@ async function processPendingMatchups(client) {
 }
 
 // ----------------- Interaction handler -----------------
+// ----------------- Interaction handler -----------------
 async function handleInteraction(interaction, client) {
   if (!interaction.isButton()) return;
   const userId = interaction.user.id;
@@ -215,6 +216,7 @@ async function handleInteraction(interaction, client) {
           partner.status = 'waiting';
           delete partner.pendingPairId;
           delete partner.matchupMessage;
+          delete partner.acknowledged;
         }
       }
       queue = queue.filter(u => u.id !== userId);
@@ -223,11 +225,17 @@ async function handleInteraction(interaction, client) {
     }
 
     // --- Acknowledge Play / Decline ---
+    if (interaction.customId.startsWith('ack_play_') || interaction.customId.startsWith('ack_decline_')) {
+      const player = queue.find(u => u.id === userId);
+      if (!player || !player.pendingPairId) return;
+      const partner = queue.find(u => u.id === player.pendingPairId);
+
+      // --- Play ---
       if (interaction.customId.startsWith('ack_play_')) {
         player.status = 'acknowledged';
         player.acknowledged = true;
 
-        // Disable only the clicked button for this user
+        // Disable only this user's Play button
         const disabledRow = interaction.message.components.map(row => {
           row.components.forEach(btn => {
             if (btn.customId === interaction.customId) btn.setDisabled(true);
@@ -239,8 +247,9 @@ async function handleInteraction(interaction, client) {
         // Update queue embed to reflect first ack
         await sendOrUpdateQueueMessage(client);
 
-        // Check if partner has also acknowledged
+        // If partner has also acknowledged, finalize matchup
         if (partner && partner.acknowledged) {
+          // Delete both matchup messages
           try { if (player.matchupMessage) await player.matchupMessage.delete(); } catch {}
           try { if (partner.matchupMessage) await partner.matchupMessage.delete(); } catch {}
 
@@ -254,15 +263,15 @@ async function handleInteraction(interaction, client) {
             `Teams: Home(${player.homeTeam}) / Away(${partner.awayTeam})`
           );
 
-          // Flush both players from queue
+          // Remove both players from queue
           queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
           await sendOrUpdateQueueMessage(client);
         }
       }
 
-
       // --- Don't Play ---
       if (interaction.customId.startsWith('ack_decline_')) {
+        // Delete partner's matchup message if exists
         if (partner && partner.matchupMessage) {
           try { await partner.matchupMessage.delete(); } catch {}
           partner.status = 'waiting';
@@ -270,7 +279,11 @@ async function handleInteraction(interaction, client) {
           delete partner.matchupMessage;
           delete partner.acknowledged;
         }
+
+        // Delete player's matchup message
         if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
+
+        // Remove player from queue
         queue = queue.filter(u => u.id !== userId);
 
         await sendOrUpdateQueueMessage(client);
@@ -282,6 +295,7 @@ async function handleInteraction(interaction, client) {
     console.error('❌ Error handling interaction:', err);
   }
 }
+
 
 // ----------------- Reset -----------------
 async function resetQueueChannel(client, options = { clearMemory: true }) {
