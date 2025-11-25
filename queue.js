@@ -287,23 +287,30 @@ async function handleInteraction(interaction, client) {
 }
 
 // ----------------- Reset -----------------
-async function resetQueueChannel(client) {
+async function resetQueueChannel(client, options = { clearMemory: true }) {
   try {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-    const messages = await channel.messages.fetch({ limit: 100 });
+    const messages = await channel.messages.fetch({ limit: 50 });
 
-    // Delete all messages
+    // Delete all old messages
     for (const msg of messages.values()) {
       try { await msg.delete(); } catch {}
     }
 
-    // Reset in-memory queue
-    queue.length = 0;
+    // Only reset in-memory queue if flag is true
+    if (options.clearMemory) {
+      queue.forEach(u => {
+        delete u.pendingPairId;
+        delete u.matchupMessageSent;
+      });
+      queue.length = 0;
+    }
 
-    console.log('🧹 Queue channel reset; all messages removed');
+    console.log('🧹 Queue channel reset; old messages removed');
 
-    // Rebuild empty queue window
+    // Rebuild queue window
     await sendOrUpdateQueueMessage(client);
+
   } catch (err) {
     console.error('❌ Error resetting queue channel:', err);
   }
