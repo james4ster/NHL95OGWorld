@@ -135,14 +135,24 @@ client.on('interactionCreate', async (interaction) => {
   try {
     await client.login(process.env.DISCORD_TOKEN);
     console.log(`✅ Logged in as ${client.user.tag}`);
-
-    // Reset queue channel: delete all old messages (queue + pending acks)
-    await resetQueueChannel(client);
-
-    console.log('🧹 Startup cleanup complete: queue flushed and main window rebuilt');
-
   } catch (err) {
     console.error('❌ Discord login failed:', err);
     console.error(err.stack);
   }
 })();
+
+client.once('ready', async () => {
+  try {
+    console.log('🧹 Startup flush: clearing old messages in queue channel');
+
+    const { resetQueueChannel } = await import('./queue.js');
+
+    // Only delete messages in the channel, do NOT touch in-memory queue
+    await resetQueueChannel(client, { clearMemory: false });
+
+    console.log('✅ Queue channel flushed, in-memory queue preserved');
+  } catch (err) {
+    console.error('❌ Error during ready queue flush:', err);
+  }
+});
+
