@@ -43,7 +43,7 @@ function buildAckButtons(playerId, emoji) {
 async function buildQueueEmbed() {
   if (queue.length === 0) {
     return new EmbedBuilder()
-      .setTitle('🎮 NHL '95 Game Queue')
+      .setTitle('🎮 NHL \'95 Game Queue')
       .setDescription('_Queue is empty_')
       .setColor('#0099ff')
       .setTimestamp();
@@ -84,7 +84,7 @@ async function buildQueueEmbed() {
   }
 
   const embed = new EmbedBuilder()
-    .setTitle('🎮 NHL '95 Game Queue')
+    .setTitle('🎮 NHL \'95 Game Queue')
     .setDescription(description)
     .setColor('#0099ff')
     .setTimestamp();
@@ -109,12 +109,12 @@ async function sendOrUpdateQueueMessage(client) {
       await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
     } else {
       const messages = await channel.messages.fetch({ limit: 10 });
-      existing = messages.find(m => m.content === '**NHL '95 Game Queue**');
+      existing = messages.find(m => m.content === '**NHL \'95 Game Queue**');
       if (existing) {
         client.queueMessageId = existing.id;
         await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
       } else {
-        const newMsg = await channel.send({ content: '**NHL '95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
+        const newMsg = await channel.send({ content: '**NHL \'95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
         client.queueMessageId = newMsg.id;
       }
     }
