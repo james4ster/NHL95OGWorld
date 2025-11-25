@@ -27,15 +27,16 @@ function buildQueueButtons() {
 }
 
 // Buttons for pending matchups in queue channel
-function buildAckButtons(playerId, discordTag) {
+function buildAckButtons(playerId, teamEmoji) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`ack_play_${playerId}`)
-      .setLabel(`Play (${discordTag})`)
+      .setCustomId(`play_${playerId}`)
+      .setLabel(`Play ${teamEmoji}`)
       .setStyle(ButtonStyle.Success),
+
     new ButtonBuilder()
-      .setCustomId(`ack_decline_${playerId}`)
-      .setLabel(`Don't Play (${discordTag})`)
+      .setCustomId(`dontplay_${playerId}`)
+      .setLabel(`Don't Play ${teamEmoji}`)
       .setStyle(ButtonStyle.Danger)
   );
 }
@@ -161,14 +162,17 @@ async function processPendingMatchups(client) {
 
       // Build embed
       const pendingEmbed = new EmbedBuilder()
-        .setTitle('🎮 Matchup Pending Acknowledgment')
-        .setDescription(
-          `🚌 **Away**\n<@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n\n` +
-          `🏠 **Home**\n<@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}\n\n` +
-          `Each player, please acknowledge by clicking your buttons below.`
-        )
-        .setColor('#ffff00')
-        .setTimestamp();
+      .setTitle('🎮 Matchup Pending Acknowledgment')
+      .setDescription(
+        `🚌 **Away**\n` +
+        `<@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n\n` +
+        `──────────────────────────\n\n` +
+        `🏠 **Home**\n` +
+        `<@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}\n\n` +
+        `Each player, please acknowledge using the buttons below.`
+      )
+      .setColor('#ffff00')
+      .setTimestamp();
 
       const awayRow = buildAckButtons(p2.id, `${nhlEmojiMap[p2.awayTeam]}`);
       const homeRow = buildAckButtons(p1.id, `${nhlEmojiMap[p1.homeTeam]}`);
