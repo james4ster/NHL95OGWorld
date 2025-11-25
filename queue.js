@@ -292,22 +292,20 @@ async function handleInteraction(interaction, client) {
       const partner = queue.find(u => u.id === player.pendingPairId);
 
       if (interaction.customId.startsWith('ack_play_')) {
-        // Mark acknowledged
         player.status = 'acknowledged';
         player.acknowledged = true;
 
-        // Disable this player's buttons safely
-        const disabledRow = new ActionRowBuilder().addComponents(
-          ...interaction.message.components[0].components.map(btn =>
-            ButtonBuilder.from(btn).setDisabled(true)
-          )
-        );
-        await interaction.update({ components: [disabledRow] });
+        // disable this player's buttons
+        const disabledRow = interaction.message.components.map(row => {
+          row.components.forEach(btn => btn.setDisabled(true));
+          return row;
+        });
+        await interaction.update({ components: disabledRow });
 
-        // Update queue to show ✅ for this player
+        // update queue window to show checkmark
         await sendOrUpdateQueueMessage(client);
 
-        // If both players acknowledged, finalize matchup
+        // finalize if both acknowledged
         if (partner && partner.acknowledged) {
           try { if (player.matchupMessage) await player.matchupMessage.delete(); } catch {}
           try { if (partner.matchupMessage) await partner.matchupMessage.delete(); } catch {}
@@ -323,39 +321,29 @@ async function handleInteraction(interaction, client) {
             `Home: <@${player.id}> [${player.elo}] : ${nhlEmojiMap[homeTeam]}`
           );
 
-          // Remove both from queue
           queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
-
-          // Update main queue window
           await sendOrUpdateQueueMessage(client);
         }
       }
 
       if (interaction.customId.startsWith('ack_decline_')) {
-        // Remove player from queue
         queue = queue.filter(u => u.id !== userId);
 
-        // Return partner to waiting if exists
         if (partner) {
           partner.status = 'waiting';
           delete partner.pendingPairId;
           delete partner.matchupMessageSent;
-
-          // Delete partner message if exists
           try { if (partner.matchupMessage) await partner.matchupMessage.delete(); } catch {}
           partner.matchupMessage = null;
         }
 
-        // Delete player's ack message
         try { if (player.matchupMessage) await player.matchupMessage.delete(); } catch {}
-
-        // Update queue window
         await sendOrUpdateQueueMessage(client);
       }
 
-      // Process any remaining pending matchups
       await processPendingMatchups(client);
     }
+
 
   } catch (err) {
     console.error('❌ Error handling interaction:', err);
