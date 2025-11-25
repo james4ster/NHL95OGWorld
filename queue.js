@@ -159,6 +159,7 @@ async function processPendingMatchups(client) {
   try {
     // Only consider players that are waiting and not already paired
     const waitingPlayers = queue.filter(u => u.status === 'waiting' && !u.pendingPairId);
+
     if (waitingPlayers.length < 2) return;
 
     const nhlEmojiMap = getNHLEmojiMap();
@@ -168,6 +169,9 @@ async function processPendingMatchups(client) {
     for (let i = 0; i + 1 < waitingPlayers.length; i += 2) {
       const p1 = waitingPlayers[i];
       const p2 = waitingPlayers[i + 1];
+
+      // Skip if either player already has a matchup message (prevents duplicates)
+      if (p1.matchupMessage || p2.matchupMessage) continue;
 
       // Randomize teams
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
@@ -179,24 +183,22 @@ async function processPendingMatchups(client) {
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
-      // Send matchup messages first
+      // Send matchup messages
       const awayContent =
         `🎮 Matchup Pending Acknowledgment\nEach player, please acknowledge using the buttons below.\n\n` +
         `🚌 Away\n<@${p2.id}> ${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}`;
 
       const awayRow = buildAckButtons(p2.id, nhlEmojiMap[p2.awayTeam]);
-      const awayMsg = await channel.send({ content: awayContent, components: [awayRow] });
-      p2.matchupMessage = awayMsg;
+      p2.matchupMessage = await channel.send({ content: awayContent, components: [awayRow] });
 
       const homeContent =
         `──────────────────────────\n\n` +
         `🏠 Home\n<@${p1.id}> ${p1.name} [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}`;
 
       const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
-      const homeMsg = await channel.send({ content: homeContent, components: [homeRow] });
-      p1.matchupMessage = homeMsg;
+      p1.matchupMessage = await channel.send({ content: homeContent, components: [homeRow] });
 
-      // Mark them as pending **after** messages are sent to avoid duplicates
+      // Mark them as pending **after messages sent**
       p1.status = 'pending';
       p2.status = 'pending';
       p1.pendingPairId = p2.id;
@@ -208,6 +210,7 @@ async function processPendingMatchups(client) {
     processingMatchups = false;
   }
 }
+
 
 
 // ----------------- Interaction handler -----------------
@@ -262,7 +265,7 @@ async function handleInteraction(interaction, client) {
         player.status = 'acknowledged';
         player.acknowledged = true;
 
-        // Rebuild ActionRow disabling only this button
+        // Disable only this button
         const disabledRow = interaction.message.components.map(row =>
           new ActionRowBuilder().addComponents(
             row.components.map(btn =>
@@ -277,9 +280,9 @@ async function handleInteraction(interaction, client) {
         );
 
         await interaction.update({ components: disabledRow });
-        await sendOrUpdateQueueMessage(client);
+        await sendOrUpdateQueueMessage(client); // Updates queue embed
 
-        // If partner also acknowledged, finalize matchup
+        // If partner has also acknowledged, finalize matchup
         if (partner && partner.acknowledged) {
           // Delete matchup messages
           if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
