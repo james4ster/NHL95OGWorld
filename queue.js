@@ -112,6 +112,7 @@ async function buildQueueEmbed(client) {
 }
 
 // ----------------- Pairing processor -----------------
+// ----------------- Pairing processor -----------------
 async function processPendingMatchups(client) {
   const waitingPlayers = queue.filter(u => u.status === 'waiting');
   const nhlEmojiMap = getNHLEmojiMap();
@@ -141,26 +142,28 @@ async function processPendingMatchups(client) {
     p1.pendingPairId = p2.id;
     p2.pendingPairId = p1.id;
 
-    // Send acknowledgment message in queue channel
+    // Build embed with matchup info
     const pendingEmbed = new EmbedBuilder()
       .setTitle('🎮 Matchup Pending Acknowledgment')
       .setDescription(
-        `Away: ${p2.name} [${p2.elo}]: ${nhlEmojiMap[p2.awayTeam]}\n` +
-        `Home: ${p1.name} [${p1.elo}]: ${nhlEmojiMap[p1.homeTeam]}\n\n` +
-        `Both players, please acknowledge by clicking your respective buttons below.`
+        `**Away:** <@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n` +
+        `**Home:** <@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}\n\n` +
+        `_Both players, please acknowledge by clicking your respective buttons below._`
       )
       .setColor('#ffff00')
       .setTimestamp();
 
-    // Include buttons for each player with their discord tag
-    const ackRow1 = buildAckButtons(p1.id, `<@${p1.id}>`);
-    const ackRow2 = buildAckButtons(p2.id, `<@${p2.id}>`);
-    await channel.send({ embeds: [pendingEmbed], components: [ackRow1, ackRow2] });
+    // Send two separate rows for buttons so each player’s buttons are visually below their info
+    const ackRowAway = buildAckButtons(p2.id, `<@${p2.id}>`);
+    const ackRowHome = buildAckButtons(p1.id, `<@${p1.id}>`);
+
+    await channel.send({ embeds: [pendingEmbed], components: [ackRowAway, ackRowHome] });
   }
 
   // Update the main queue window only once
   await sendOrUpdateQueueMessage(client);
 }
+
 
 // ----------------- Interaction handler -----------------
 async function handleInteraction(interaction, client) {
