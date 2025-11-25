@@ -135,25 +135,37 @@ client.on('interactionCreate', async (interaction) => {
   try {
     await client.login(process.env.DISCORD_TOKEN);
     console.log(`✅ Logged in as ${client.user.tag}`);
+
+    // Reset queue channel: delete all old messages (queue + pending acks)
+    await resetQueueChannel(client);
+
+    console.log('🧹 Startup cleanup complete: queue flushed and main window rebuilt');
+
   } catch (err) {
     console.error('❌ Discord login failed:', err);
     console.error(err.stack);
   }
 })();
 
+// === Ensure queue fully cleared after bot ready ===
 client.once('ready', async () => {
   try {
-    console.log('🧹 Startup flush: clearing old messages in queue channel');
+    console.log('🧹 Final startup flush: clearing in-memory queue and matchup flags');
 
-    const { resetQueueChannel } = await import('./queue.js');
+    // Clear in-memory queue
+    import('./queue.js').then(({ queue }) => {
+      queue.forEach(u => {
+        delete u.pendingPairId;
+        delete u.matchupMessageSent;
+      });
+      queue.length = 0;
+    });
 
-    // Only delete messages in the channel, do NOT touch in-memory queue
-    await resetQueueChannel(client, { clearMemory: true });
+    // Optionally re-send empty queue window
+    await resetQueueChannel(client);
 
-    console.log('✅ Queue channel flushed, in-memory queue preserved');
+    console.log('✅ Queue fully cleared and ready');
   } catch (err) {
     console.error('❌ Error during ready queue flush:', err);
   }
 });
-
-
