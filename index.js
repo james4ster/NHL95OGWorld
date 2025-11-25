@@ -146,3 +146,26 @@ client.on('interactionCreate', async (interaction) => {
     console.error(err.stack);
   }
 })();
+
+// === Ensure queue fully cleared after bot ready ===
+client.once('ready', async () => {
+  try {
+    console.log('🧹 Final startup flush: clearing in-memory queue and matchup flags');
+
+    // Clear in-memory queue
+    import('./queue.js').then(({ queue }) => {
+      queue.forEach(u => {
+        delete u.pendingPairId;
+        delete u.matchupMessageSent;
+      });
+      queue.length = 0;
+    });
+
+    // Optionally re-send empty queue window
+    await resetQueueChannel(client);
+
+    console.log('✅ Queue fully cleared and ready');
+  } catch (err) {
+    console.error('❌ Error during ready queue flush:', err);
+  }
+});
