@@ -2,8 +2,7 @@
 This version of queue.js is the working version of the single queue window.
 - The ack messages work
 - The rated-game channel post works correctly
-- Fixed double queue windows
-- Discord tags shown next to ack buttons
+- No more DMs; acknowledgment happens in queue channel
 */
 
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
@@ -16,7 +15,7 @@ let queue = [];
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
 const RATED_GAMES_CHANNEL_ID = process.env.RATED_GAMES_CHANNEL_ID;
 
-// Timeout for DM acknowledgment in ms
+// Timeout for acknowledgment in ms
 const ACK_TIMEOUT = 5 * 60 * 1000;
 
 // ----------------- Buttons -----------------
@@ -27,18 +26,17 @@ function buildQueueButtons() {
   );
 }
 
-function buildAckButtons(playerId, playerTag) {
+// Buttons for pending matchups in queue channel
+function buildAckButtons(playerId, discordTag) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`ack_play_${playerId}`)
-      .setLabel(`Play`)
-      .setStyle(ButtonStyle.Success)
-      .setEmoji(playerTag), // Use the Discord tag as "emoji" place
+      .setLabel(`Play (${discordTag})`)
+      .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`ack_decline_${playerId}`)
-      .setLabel("Don't Play")
+      .setLabel(`Don't Play (${discordTag})`)
       .setStyle(ButtonStyle.Danger)
-      .setEmoji(playerTag)
   );
 }
 
@@ -48,23 +46,16 @@ async function sendOrUpdateQueueMessage(client) {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const embed = await buildQueueEmbed(client);
 
-    // Fetch existing queue message by ID
-    let existing = null;
     if (client.queueMessageId) {
-      existing = await channel.messages.fetch(client.queueMessageId).catch(() => null);
+      const existing = await channel.messages.fetch(client.queueMessageId).catch(() => null);
+      if (existing) {
+        await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
+        return;
+      }
     }
 
-    if (existing) {
-      await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
-      return;
-    }
-
-    // Only create a new message if no valid queue message exists
-    const newMsg = await channel.send({
-      content: '**NHL ’95 Game Queue**',
-      embeds: [embed],
-      components: [buildQueueButtons()],
-    });
+    // Only create a new message if no valid ID exists
+    const newMsg = await channel.send({ content: '**NHL ’95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
     client.queueMessageId = newMsg.id;
 
   } catch (err) {
@@ -117,63 +108,6 @@ async function buildQueueEmbed(client) {
   return embed;
 }
 
-// ----------------- DM Pending -----------------
-async function sendPendingDM(client, player1, player2) {
-  const nhlEmojiMap = getNHLEmojiMap();
-
-  // Use teams already stored (assigned in processPendingMatchups)
-  const homeTeam = player1.homeTeam;
-  const awayTeam = player1.awayTeam;
-
-  const homePlayerFirst = Math.random() < 0.5;
-  const homePlayer = homePlayerFirst ? player1 : player2;
-  const awayPlayer = homePlayerFirst ? player2 : player1;
-
-  player1.status = 'pending';
-  player2.status = 'pending';
-  player1.pendingPairId = player2.id;
-  player2.pendingPairId = player1.id;
-
-  const dmEmbed = new EmbedBuilder()
-    .setTitle('🎮 Matchup Pending Acknowledgment')
-    .setDescription(
-      `Away: ${awayPlayer.name} [${awayPlayer.elo}] ${nhlEmojiMap[awayTeam]}\n` +
-      `Home: ${homePlayer.name} [${homePlayer.elo}] ${nhlEmojiMap[homeTeam]}\n\n` +
-      `Do you want to play this matchup?`
-    )
-    .setColor('#ffff00')
-    .setTimestamp();
-
-  for (const p of [homePlayer, awayPlayer]) {
-    try {
-      const user = await client.users.fetch(p.id);
-      // Pass discord tag as extra param to button builder
-      await user.send({ embeds: [dmEmbed], components: [buildAckButtons(p.id, `<@${p.id}>`)] });
-    } catch (err) {
-      console.error('❌ Failed to send DM for acknowledgment to', p.id, err);
-      p.status = 'waiting';
-      const partner = queue.find(q => q.id === p.pendingPairId);
-      if (partner) partner.status = 'waiting';
-      delete p.pendingPairId;
-    }
-
-    setTimeout(() => {
-      if (p.status === 'pending') {
-        const partner = queue.find(q => q.id === p.pendingPairId);
-        p.status = 'waiting';
-        delete p.pendingPairId;
-        if (partner) {
-          partner.status = 'waiting';
-          delete partner.pendingPairId;
-        }
-        sendOrUpdateQueueMessage(client).catch(() => {});
-      }
-    }, ACK_TIMEOUT);
-  }
-
-  await sendOrUpdateQueueMessage(client);
-}
-
 // ----------------- Pairing processor -----------------
 async function processPendingMatchups(client) {
   const waitingPlayers = queue.filter(u => u.status === 'waiting');
@@ -185,21 +119,41 @@ async function processPendingMatchups(client) {
     const p2 = waitingPlayers[i + 1];
     if (p1.status !== 'waiting' || p2.status !== 'waiting') continue;
 
+    // Pick random teams once for the pair
     let homeTeam = teams[Math.floor(Math.random() * teams.length)];
     let awayTeam = teams[Math.floor(Math.random() * teams.length)];
     while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
 
+    // Store the teams in the player objects so both matchup and rated game use the same teams
     p1.homeTeam = homeTeam;
     p1.awayTeam = awayTeam;
     p2.homeTeam = homeTeam;
     p2.awayTeam = awayTeam;
 
+    // Mark them as pending and store pair info
     p1.status = 'pending';
     p2.status = 'pending';
     p1.pendingPairId = p2.id;
     p2.pendingPairId = p1.id;
 
-    await sendPendingDM(client, p1, p2);
+    // Send acknowledgment message in queue channel
+    const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+    const pendingEmbed = new EmbedBuilder()
+      .setTitle('🎮 Matchup Pending Acknowledgment')
+      .setDescription(
+        `Away: ${p2.name} [${p2.elo}]: ${nhlEmojiMap[p2.awayTeam]}\n` +
+        `Home: ${p1.name} [${p1.elo}]: ${nhlEmojiMap[p1.homeTeam]}\n\n` +
+        `Both players, please acknowledge by clicking your respective buttons below.`
+      )
+      .setColor('#ffff00')
+      .setTimestamp();
+
+    // Include buttons for each player with their discord tag
+    const ackRow1 = buildAckButtons(p1.id, `<@${p1.id}>`);
+    const ackRow2 = buildAckButtons(p2.id, `<@${p2.id}>`);
+    await channel.send({ embeds: [pendingEmbed], components: [ackRow1, ackRow2] });
+
+    await sendOrUpdateQueueMessage(client);
   }
 }
 
@@ -225,9 +179,11 @@ async function handleInteraction(interaction, client) {
     const playerMasterData = pmRes.data.values || [];
     const rawStandingsData = rsRes.data.values || [];
 
+    // Lookup nickname by Discord ID
     const pmRow = playerMasterData.find(r => r[0]?.trim() === userId);
     const playerNickname = pmRow ? pmRow[2]?.trim() : interaction.user.username;
 
+    // Lookup ELO from RawStandings column AM (index 38)
     const rsRow = rawStandingsData.find(r => r[0]?.trim() === playerNickname);
     if (!rsRow) {
       console.warn('⚠️ Could not find ELO for player:', playerNickname);
@@ -251,6 +207,7 @@ async function handleInteraction(interaction, client) {
       const partner = queue.find(u => u.id === player.pendingPairId);
 
       if (partner && partner.status === 'acknowledged') {
+        // Both acked — use pending pair teams
         const nhlEmojiMap = getNHLEmojiMap();
         const homeTeam = player.homeTeam;
         const awayTeam = player.awayTeam;
