@@ -1,8 +1,8 @@
 /*========
 This version of queue.js is the working version of the single queue window.
-- The ack messages now appear in the Queue channel instead of DMs
-- Only the tagged player can click their buttons
+- The ack messages work
 - The rated-game channel post works correctly
+- Pending messages are now properly isolated and deleted after ack or decline
 */
 
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
@@ -15,7 +15,7 @@ let queue = [];
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
 const RATED_GAMES_CHANNEL_ID = process.env.RATED_GAMES_CHANNEL_ID;
 
-// Timeout for acknowledgment in ms
+// Timeout for DM acknowledgment in ms
 const ACK_TIMEOUT = 5 * 60 * 1000;
 
 // ----------------- Buttons -----------------
@@ -101,65 +101,65 @@ async function buildQueueEmbed(client) {
   return embed;
 }
 
-// ----------------- Pending Acknowledgment in Queue Channel -----------------
-async function sendPendingChannelAck(client, player1, player2) {
+// ----------------- Pending Messages -----------------
+async function sendPendingMessage(client, p1, p2) {
   const nhlEmojiMap = getNHLEmojiMap();
 
-  const homeTeam = player1.homeTeam;
-  const awayTeam = player1.awayTeam;
+  const homeTeam = p1.homeTeam;
+  const awayTeam = p1.awayTeam;
 
   const homePlayerFirst = Math.random() < 0.5;
-  const homePlayer = homePlayerFirst ? player1 : player2;
-  const awayPlayer = homePlayerFirst ? player2 : player1;
+  const homePlayer = homePlayerFirst ? p1 : p2;
+  const awayPlayer = homePlayerFirst ? p2 : p1;
 
-  player1.status = 'pending';
-  player2.status = 'pending';
-
-  player1.pendingPairId = player2.id;
-  player2.pendingPairId = player1.id;
+  p1.status = 'pending';
+  p2.status = 'pending';
+  p1.pendingPairId = p2.id;
+  p2.pendingPairId = p1.id;
 
   const embed = new EmbedBuilder()
-    .setTitle('🎮 Pending Matchup - Acknowledge to Play')
+    .setTitle('🎮 Matchup Pending Acknowledgment')
     .setDescription(
-      `Away: <@${awayPlayer.id}> [${awayPlayer.elo}] ${nhlEmojiMap[awayTeam]}\n` +
-      `Home: <@${homePlayer.id}> [${homePlayer.elo}] ${nhlEmojiMap[homeTeam]}\n\n` +
-      `Both players must click their respective buttons below to confirm.`
+      `Away: ${awayPlayer.name} [${awayPlayer.elo}] ${nhlEmojiMap[awayTeam]}\n` +
+      `Home: ${homePlayer.name} [${homePlayer.elo}] ${nhlEmojiMap[homeTeam]}\n\n` +
+      `Do you want to play this matchup?`
     )
     .setColor('#ffff00')
     .setTimestamp();
 
-  const components = [
-    buildAckButtons(homePlayer.id),
-    buildAckButtons(awayPlayer.id)
-  ];
-
   try {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-    const msg = await channel.send({ embeds: [embed], components });
-
-    // Attach message ID to both players so we can remove it after ack
-    player1.pendingMsgId = msg.id;
-    player2.pendingMsgId = msg.id;
+    const msg = await channel.send({
+      content: `<@${p1.id}> <@${p2.id}>`,
+      embeds: [embed],
+      components: [buildAckButtons(p1.id), buildAckButtons(p2.id)],
+    });
+    p1.pendingMsgId = msg.id;
+    p2.pendingMsgId = msg.id;
 
     // Timeout to revert pending if no ack
     setTimeout(() => {
-      if (player1.status === 'pending' || player2.status === 'pending') {
-        player1.status = 'waiting';
-        player2.status = 'waiting';
-        delete player1.pendingPairId;
-        delete player2.pendingPairId;
-        delete player1.pendingMsgId;
-        delete player2.pendingMsgId;
-        sendOrUpdateQueueMessage(client).catch(() => {});
-        msg.delete().catch(() => {});
-      }
+      [p1, p2].forEach(p => {
+        if (p.status === 'pending') {
+          const partner = queue.find(x => x.id === p.pendingPairId);
+          p.status = 'waiting';
+          delete p.pendingPairId;
+          if (partner) {
+            partner.status = 'waiting';
+            delete partner.pendingPairId;
+          }
+          if (msg) msg.delete().catch(() => {});
+          sendOrUpdateQueueMessage(client).catch(() => {});
+        }
+      });
     }, ACK_TIMEOUT);
+
   } catch (err) {
-    console.error('❌ Failed to send pending channel ack message:', err);
-    player1.status = 'waiting';
-    player2.status = 'waiting';
-    delete player1.pendingPairId;
-    delete player2.pendingPairId;
+    console.error('❌ Failed to send pending message:', err);
+    [p1, p2].forEach(p => {
+      p.status = 'waiting';
+      delete p.pendingPairId;
+    });
   }
 
   await sendOrUpdateQueueMessage(client);
@@ -176,19 +176,16 @@ async function processPendingMatchups(client) {
     const p2 = waitingPlayers[i + 1];
     if (p1.status !== 'waiting' || p2.status !== 'waiting') continue;
 
-    // Pick random teams once for the pair
     let homeTeam = teams[Math.floor(Math.random() * teams.length)];
     let awayTeam = teams[Math.floor(Math.random() * teams.length)];
     while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
 
-    // Store the teams in the player objects so both queue message and rated game use the same teams
     p1.homeTeam = homeTeam;
     p1.awayTeam = awayTeam;
     p2.homeTeam = homeTeam;
     p2.awayTeam = awayTeam;
 
-    // Send acknowledgment in queue channel
-    await sendPendingChannelAck(client, p1, p2);
+    await sendPendingMessage(client, p1, p2);
   }
 }
 
@@ -214,60 +211,43 @@ async function handleInteraction(interaction, client) {
     const playerMasterData = pmRes.data.values || [];
     const rawStandingsData = rsRes.data.values || [];
 
-    // Lookup nickname by Discord ID
     const pmRow = playerMasterData.find(r => r[0]?.trim() === userId);
     const playerNickname = pmRow ? pmRow[2]?.trim() : interaction.user.username;
 
-    // Lookup ELO from RawStandings column AM (index 38)
     const rsRow = rawStandingsData.find(r => r[0]?.trim() === playerNickname);
     if (!rsRow) {
       console.warn('⚠️ Could not find ELO for player:', playerNickname);
       return;
     }
     const elo = parseInt(rsRow[38], 10);
-
     const name = playerNickname;
 
     if (interaction.customId === 'join_queue') {
-      if (!queue.find(u => u.id === userId)) {
-        queue.push({ id: userId, name, elo, status: 'waiting' });
-      }
+      if (!queue.find(u => u.id === userId)) queue.push({ id: userId, name, elo, status: 'waiting' });
     } else if (interaction.customId === 'leave_queue') {
       queue = queue.filter(u => u.id !== userId);
     } else if (interaction.customId.startsWith('ack_play_')) {
       const player = queue.find(u => u.id === userId);
       if (!player || !player.pendingPairId) return;
-
-      if (player.pendingMsgId && !interaction.customId.endsWith(userId)) {
-        await interaction.followUp({ content: "This button isn't for you.", ephemeral: true });
-        return;
-      }
-
       player.status = 'acknowledged';
       const partner = queue.find(u => u.id === player.pendingPairId);
-
       if (partner && partner.status === 'acknowledged') {
-        // Both acked — use pending pair teams
         const nhlEmojiMap = getNHLEmojiMap();
         const homeTeam = player.homeTeam;
         const awayTeam = player.awayTeam;
-
         const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
         await ratedChannel.send(
           `🎮 Rated Game Matchup!\n` +
           `Away: <@${partner.id}> [${partner.elo}]: ${nhlEmojiMap[awayTeam]}\n` +
           `Home: <@${player.id}> [${player.elo}]: ${nhlEmojiMap[homeTeam]}`
         );
-
-        // Remove both players from queue
-        queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
-
         // Delete pending message
         if (player.pendingMsgId) {
-          const msgChannel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-          const msg = await msgChannel.messages.fetch(player.pendingMsgId).catch(() => null);
-          if (msg) msg.delete().catch(() => {});
+          const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+          const msg = await channel.messages.fetch(player.pendingMsgId).catch(() => null);
+          if (msg) await msg.delete().catch(() => {});
         }
+        queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
       }
     } else if (interaction.customId.startsWith('ack_decline_')) {
       const player = queue.find(u => u.id === userId);
@@ -277,21 +257,19 @@ async function handleInteraction(interaction, client) {
           if (partner) {
             partner.status = 'waiting';
             delete partner.pendingPairId;
-            delete partner.pendingMsgId;
             try { 
               const partnerUser = await client.users.fetch(partner.id);
               partnerUser.send(`Your opponent <@${player.id}> declined the matchup. You have been returned to the queue.`).catch(() => {});
             } catch {}
           }
         }
-        queue = queue.filter(u => u.id !== userId);
-
-        // Delete pending message if exists
+        // Delete pending message
         if (player.pendingMsgId) {
-          const msgChannel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-          const msg = await msgChannel.messages.fetch(player.pendingMsgId).catch(() => null);
-          if (msg) msg.delete().catch(() => {});
+          const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+          const msg = await channel.messages.fetch(player.pendingMsgId).catch(() => null);
+          if (msg) await msg.delete().catch(() => {});
         }
+        queue = queue.filter(u => u.id !== userId);
       }
     }
 
