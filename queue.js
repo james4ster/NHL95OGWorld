@@ -291,9 +291,9 @@ async function handleInteraction(interaction, client) {
           // Send matchup to rated-games channel
           await ratedChannel.send(
             `🎮 Rated Game Matchup!\n` +
-            `🏠 Home: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}\n` +
             `🚌 Away: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\n` +
-            `Teams: Home(${player.homeTeam}) / Away(${partner.awayTeam})`
+            `🏠 Home: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}\n` +
+            `Teams: Away(${partner.awayTeam}) / Home(${player.homeTeam})`
           );
 
           // Remove both players from queue
