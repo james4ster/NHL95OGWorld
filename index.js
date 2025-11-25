@@ -15,8 +15,8 @@ import express from 'express';
 import { handleGuildMemberAdd } from './welcome.js';
 import { google } from 'googleapis';
 
-// Persistent queue; clear on restart
-import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel, clearPendingChannel } from './queue.js';
+// Persistent queue
+import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel } from './queue.js';
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
 
 // === Config Variables ===
@@ -136,27 +136,13 @@ client.on('interactionCreate', async (interaction) => {
     await client.login(process.env.DISCORD_TOKEN);
     console.log(`✅ Logged in as ${client.user.tag}`);
 
-    // Reset queue channel: delete old messages, flush queue, send new persistent message with buttons
+    // Reset queue channel: delete all old messages (queue + pending acks)
     await resetQueueChannel(client);
-    
+
+    console.log('🧹 Startup cleanup complete: queue flushed and main window rebuilt');
 
   } catch (err) {
     console.error('❌ Discord login failed:', err);
     console.error(err.stack);
   }
 })();
-
-// === Clear pending-games channel - run once after bot is fully ready ===
-client.once('ready', async () => {
-  try {
-    // Clear all pending matchup messages
-    await clearPendingChannel(client);
-
-    // Reset main queue channel again if needed
-    await resetQueueChannel(client);
-
-    console.log('🧹 Startup cleanup complete: pending matchups and queue reset');
-  } catch (err) {
-    console.error('❌ Error during startup cleanup:', err);
-  }
-});

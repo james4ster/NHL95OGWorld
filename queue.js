@@ -321,18 +321,4 @@ async function resetQueueChannel(client) {
     console.error('❌ Error resetting queue channel:', err);
   }
 }
-
-// ----------------- Flush pending-games channel on restart -----------------
-async function clearPendingChannel(client) {
-  const channel = await client.channels.fetch(PENDING_GAMES_CHANNEL_ID);
-
-  let fetched;
-  do {
-    fetched = await channel.messages.fetch({ limit: 100 });
-    if (fetched.size > 0) {
-      await channel.bulkDelete(fetched, true);
-    }
-  } while (fetched.size === 100);
-}
-
 export { queue, sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel };
