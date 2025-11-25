@@ -135,17 +135,19 @@ async function processPendingMatchups(client) {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
 
     for (let i = 0; i + 1 < waitingPlayers.length; i += 2) {
-      const p1 = waitingPlayers[i];
-      const p2 = waitingPlayers[i + 1];
+      const p1 = waitingPlayers[i]; // Home
+      const p2 = waitingPlayers[i + 1]; // Away
 
       if (p1.status !== 'waiting' || p2.status !== 'waiting') continue;
       if (p1.matchupMessageSent || p2.matchupMessageSent) continue;
 
+      // Mark as pending immediately
       p1.status = 'pending';
       p2.status = 'pending';
       p1.pendingPairId = p2.id;
       p2.pendingPairId = p1.id;
 
+      // Pick random teams
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
       let awayTeam = teams[Math.floor(Math.random() * teams.length)];
       while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
@@ -155,8 +157,8 @@ async function processPendingMatchups(client) {
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
-      // Single message content
-      const content =
+      // --- Away team message ---
+      const awayContent =
         `🎮 Matchup Pending Acknowledgment\n` +
         `Each player, please acknowledge using the buttons below.\n\n` +
         `🚌 Away\n<@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}`;
@@ -174,6 +176,16 @@ async function processPendingMatchups(client) {
           .setStyle(ButtonStyle.Danger)
       );
 
+      await channel.send({
+        content: awayContent,
+        components: [awayRow]
+      });
+
+      // --- Home team message ---
+      const homeContent =
+        `──────────────────────────\n\n` +
+        `🏠 Home\n<@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}`;
+
       const homeRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`ack_play_${p1.id}`)
@@ -187,24 +199,24 @@ async function processPendingMatchups(client) {
           .setStyle(ButtonStyle.Danger)
       );
 
-      const homeSection = `\n──────────────────────────\n\n🏠 Home\n<@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}`;
-
-      // Send a single message with 2 rows: away buttons above divider, home buttons below
       await channel.send({
-        content: content + homeSection,
-        components: [awayRow, homeRow]
+        content: homeContent,
+        components: [homeRow]
       });
 
+      // Mark messages sent
       p1.matchupMessageSent = true;
       p2.matchupMessageSent = true;
     }
 
+    // Update the main queue window once
     await sendOrUpdateQueueMessage(client);
 
   } finally {
     processingMatchups = false;
   }
 }
+
 
 
 
