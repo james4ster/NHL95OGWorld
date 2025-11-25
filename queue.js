@@ -40,6 +40,7 @@ function buildAckButtons(playerId, emoji) {
 }
 
 // ----------------- Queue Embed -----------------
+// ----------------- Queue Embed -----------------
 async function buildQueueEmbed() {
   if (queue.length === 0) {
     return new EmbedBuilder()
@@ -49,19 +50,43 @@ async function buildQueueEmbed() {
       .setTimestamp();
   }
 
-  const list = queue
-    .map((u, i) => {
-      let statusEmoji = '';
-      if (u.status === 'waiting') statusEmoji = '🟡';
-      else if (u.status === 'pending') statusEmoji = '🟠';
-      else if (u.status === 'acknowledged') statusEmoji = '✅';
-      return `${i + 1}. ${u.name} [${u.elo}] ${statusEmoji}`;
-    })
-    .join('\n');
+  // List of players not yet in a pending matchup
+  const soloPlayers = queue.filter(u => !u.pendingPairId);
+
+  // Players in pending matchups
+  const pendingPlayers = queue.filter(u => u.pendingPairId);
+
+  let description = '';
+
+  // Solo players — no emoji
+  if (soloPlayers.length) {
+    description += soloPlayers
+      .map((u, i) => `${i + 1}. ${u.name} [${u.elo}]`)
+      .join('\n');
+  }
+
+  // Pending matches
+  if (pendingPlayers.length) {
+    const seen = new Set();
+    for (const p of pendingPlayers) {
+      if (seen.has(p.id)) continue;
+      const partner = queue.find(x => x.id === p.pendingPairId);
+      if (!partner) continue;
+
+      const pEmoji = p.acknowledged ? '✅' : '🟡';
+      const partnerEmoji = partner.acknowledged ? '✅' : '🟡';
+
+      description += description ? '\n' : '';
+      description += `- ${p.name} [${p.elo}] ${pEmoji} vs ${partner.name} [${partner.elo}] ${partnerEmoji}`;
+
+      seen.add(p.id);
+      seen.add(partner.id);
+    }
+  }
 
   const embed = new EmbedBuilder()
     .setTitle('🎮 NHL ’95 Game Queue')
-    .setDescription(list)
+    .setDescription(description)
     .setColor('#0099ff')
     .setTimestamp();
 
@@ -133,7 +158,8 @@ async function processPendingMatchups(client) {
   processingMatchups = true;
 
   try {
-    const waitingPlayers = queue.filter(u => u.status === 'waiting');
+    // Only consider players that are waiting and not already paired
+    const waitingPlayers = queue.filter(u => u.status === 'waiting' && !u.pendingPairId);
     if (waitingPlayers.length < 2) return;
 
     const nhlEmojiMap = getNHLEmojiMap();
@@ -144,13 +170,7 @@ async function processPendingMatchups(client) {
       const p1 = waitingPlayers[i];
       const p2 = waitingPlayers[i + 1];
 
-      if (p1.matchupMessage || p2.matchupMessage) continue;
-
-      p1.status = 'pending';
-      p2.status = 'pending';
-      p1.pendingPairId = p2.id;
-      p2.pendingPairId = p1.id;
-
+      // Randomize teams
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
       let awayTeam = teams[Math.floor(Math.random() * teams.length)];
       while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
@@ -160,6 +180,7 @@ async function processPendingMatchups(client) {
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
+      // Send matchup messages first
       const awayContent =
         `🎮 Matchup Pending Acknowledgment\nEach player, please acknowledge using the buttons below.\n\n` +
         `🚌 Away\n<@${p2.id}> ${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}`;
@@ -175,6 +196,12 @@ async function processPendingMatchups(client) {
       const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
       const homeMsg = await channel.send({ content: homeContent, components: [homeRow] });
       p1.matchupMessage = homeMsg;
+
+      // Mark them as pending **after** messages are sent to avoid duplicates
+      p1.status = 'pending';
+      p2.status = 'pending';
+      p1.pendingPairId = p2.id;
+      p2.pendingPairId = p1.id;
     }
 
     await sendOrUpdateQueueMessage(client);
@@ -183,7 +210,7 @@ async function processPendingMatchups(client) {
   }
 }
 
-// ----------------- Interaction handler -----------------
+
 // ----------------- Interaction handler -----------------
 async function handleInteraction(interaction, client) {
   if (!interaction.isButton()) return;
