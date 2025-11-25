@@ -176,10 +176,11 @@ async function processPendingMatchups(client) {
           .setStyle(ButtonStyle.Danger)
       );
 
-      await channel.send({
+      const awayMsg = await channel.send({
         content: awayContent,
         components: [awayRow]
       });
+      p2.matchupMessage = awayMsg;
 
       // --- Home team message ---
       const homeContent =
@@ -199,10 +200,11 @@ async function processPendingMatchups(client) {
           .setStyle(ButtonStyle.Danger)
       );
 
-      await channel.send({
+      const homeMsg = await channel.send({
         content: homeContent,
         components: [homeRow]
       });
+      p1.matchupMessage = homeMsg;
 
       // Mark messages sent
       p1.matchupMessageSent = true;
@@ -216,6 +218,7 @@ async function processPendingMatchups(client) {
     processingMatchups = false;
   }
 }
+
 
 
 
@@ -268,51 +271,78 @@ async function handleInteraction(interaction, client) {
         }
       }
       queue = queue.filter(u => u.id !== userId);
-    } else if (interaction.customId.startsWith('ack_play_')) {
+    } else if (interaction.customId.startsWith('ack_play_') || interaction.customId.startsWith('ack_decline_')) {
       const player = queue.find(u => u.id === userId);
       if (!player || !player.pendingPairId) return;
 
-      player.status = 'acknowledged';
+      // Restrict buttons
+      if (!interaction.customId.endsWith(userId)) {
+        await interaction.reply({ content: "❌ This button is not for you.", ephemeral: true });
+        return;
+      }
+
       const partner = queue.find(u => u.id === player.pendingPairId);
 
-      if (partner && partner.status === 'acknowledged') {
-        const nhlEmojiMap = getNHLEmojiMap();
-        const homeTeam = player.homeTeam;
-        const awayTeam = player.awayTeam;
+      if (interaction.customId.startsWith('ack_play_')) {
+        player.status = 'acknowledged';
+        player.acknowledged = true;
 
-        const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
-        await ratedChannel.send(
-          `🎮 Rated Game Matchup!\n` +
-          `Away: <@${partner.id}> [${partner.elo}]: ${nhlEmojiMap[awayTeam]}\n` +
-          `Home: <@${player.id}> [${player.elo}]: ${nhlEmojiMap[homeTeam]}`
-        );
+        // disable buttons
+        const disabledRow = interaction.message.components.map(row => {
+          row.components.forEach(btn => btn.setDisabled(true));
+          return row;
+        });
+        await interaction.update({ components: disabledRow });
 
-        // Remove both from queue
-        queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
-      }
-    } else if (interaction.customId.startsWith('ack_decline_')) {
-      const player = queue.find(u => u.id === userId);
-      if (player) {
-        if (player.pendingPairId) {
-          const partner = queue.find(u => u.id === player.pendingPairId);
-          if (partner) {
-            partner.status = 'waiting';
-            delete partner.pendingPairId;
-            delete partner.matchupMessageSent;
-            try { 
-              const partnerUser = await client.users.fetch(partner.id);
-              partnerUser.send(`Your opponent <@${player.id}> declined the matchup. You have been returned to the queue.`).catch(() => {});
-            } catch {}
-          }
+        // Both players acknowledged?
+        if (partner && partner.acknowledged) {
+          try { if (player.matchupMessage) await player.matchupMessage.delete(); } catch {}
+          try { if (partner.matchupMessage) await partner.matchupMessage.delete(); } catch {}
+
+          // Send to rated channel
+          const nhlEmojiMap = getNHLEmojiMap();
+          const homeTeam = player.homeTeam;
+          const awayTeam = player.awayTeam;
+          const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
+          await ratedChannel.send(
+            `🎮 Rated Game Matchup!\n` +
+            `Away: <@${partner.id}> [${partner.elo}] : ${nhlEmojiMap[awayTeam]}\n` +
+            `Home: <@${player.id}> [${player.elo}] : ${nhlEmojiMap[homeTeam]}`
+          );
+
+          // Remove both from queue
+          queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
+
+          // Update queue window
+          await sendOrUpdateQueueMessage(client);
         }
-        delete player.matchupMessageSent;
+
+      } else if (interaction.customId.startsWith('ack_decline_')) {
+        // Handle "Don't Play" similar to before
+        if (partner) {
+          partner.status = 'waiting';
+          delete partner.pendingPairId;
+          delete partner.matchupMessageSent;
+          try {
+            const partnerUser = await client.users.fetch(partner.id);
+            partnerUser.send(`Your opponent <@${player.id}> declined the matchup. You have been returned to the queue.`).catch(() => {});
+          } catch {}
+        }
+
+        // Remove player from queue
         queue = queue.filter(u => u.id !== userId);
+
+        // Delete ack message
+        try { if (player.matchupMessage) await player.matchupMessage.delete(); } catch {}
+        await interaction.message.delete().catch(() => {});
+
+        // Update queue window
+        await sendOrUpdateQueueMessage(client);
       }
+
+      // Only process pending matchups once
+      await processPendingMatchups(client);
     }
-
-    // Only call once
-    await processPendingMatchups(client);
-
   } catch (err) {
     console.error('❌ Error handling interaction:', err);
   }
@@ -333,6 +363,7 @@ async function resetQueueChannel(client, options = { clearMemory: true }) {
       queue.forEach(u => {
         delete u.pendingPairId;
         delete u.matchupMessageSent;
+        delete u.matchupMessage;
       });
       queue.length = 0;
     }
