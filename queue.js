@@ -139,44 +139,52 @@ async function processPendingMatchups(client) {
     let awayTeam = teams[Math.floor(Math.random() * teams.length)];
     while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
 
-    // Store teams in player objects
+    // Store teams
     p1.homeTeam = homeTeam;
     p1.awayTeam = awayTeam;
     p2.homeTeam = homeTeam;
     p2.awayTeam = awayTeam;
 
-    // Mark as pending and store pair info
+    // Mark pending
     p1.status = 'pending';
     p2.status = 'pending';
     p1.pendingPairId = p2.id;
     p2.pendingPairId = p1.id;
 
-    // Build embed
+    //
+    //  🔥 NEW EMBED LAYOUT — SAFE CHANGE
+    //
     const pendingEmbed = new EmbedBuilder()
       .setTitle('🎮 Matchup Pending Acknowledgment')
-      .setDescription(
-        `**Away:** <@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n` +
-        `**Home:** <@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}\n\n` +
-        `_Both players, please acknowledge by clicking your respective buttons below._`
-      )
       .setColor('#ffff00')
+      .setDescription(
+        `### 🚌 Away\n` +
+        `<@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n\n` +
+        `### 🏠 Home\n` +
+        `<@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}\n\n` +
+        `_Each player, please acknowledge by clicking your buttons below._`
+      )
       .setTimestamp();
 
-    // Buttons per player
+    // 🔥 Buttons stay EXACTLY the same (safe)
     const ackRowAway = buildAckButtons(p2.id, `<@${p2.id}>`);
     const ackRowHome = buildAckButtons(p1.id, `<@${p1.id}>`);
 
-    // Send message for this pair
-    await channel.send({ embeds: [pendingEmbed], components: [ackRowAway, ackRowHome] });
+    // Send message
+    await channel.send({
+      embeds: [pendingEmbed],
+      components: [ackRowAway, ackRowHome]
+    });
 
-    // Set persistent flag
+    // Persistent flag
     p1.matchupMessageSent = true;
     p2.matchupMessageSent = true;
   }
 
-  // Update main queue once
+  // Update main queue
   await sendOrUpdateQueueMessage(client);
 }
+
 
 // ----------------- Interaction handler -----------------
 async function handleInteraction(interaction, client) {
