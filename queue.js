@@ -226,18 +226,13 @@ async function handleInteraction(interaction, client) {
   const userId = interaction.user.id;
 
   try {
-    // Defer to avoid interaction timeout
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => {});
-    }
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
   } catch {}
 
   try {
+    // Fetch player data
     const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-    const auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    });
+    const auth = new google.auth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
     const sheets = google.sheets({ version: 'v4', auth });
 
     const [pmRes, rsRes] = await Promise.all([
@@ -248,34 +243,34 @@ async function handleInteraction(interaction, client) {
     const playerMasterData = pmRes.data.values || [];
     const rawStandingsData = rsRes.data.values || [];
 
-    // Lookup player info
     const pmRow = playerMasterData.find(r => r[0]?.trim() === userId);
     const playerNickname = pmRow ? pmRow[2]?.trim() : interaction.user.username;
+
     const rsRow = rawStandingsData.find(r => r[0]?.trim() === playerNickname);
-    const elo = rsRow ? parseInt(rsRow[38], 10) : 1000;
+    if (!rsRow) {
+      console.warn('⚠️ Could not find ELO for player:', playerNickname);
+      return;
+    }
+    const elo = parseInt(rsRow[38], 10);
+    const name = playerNickname;
 
-    const playerInQueue = queue.find(u => u.id === userId);
-
-    // ----------------- JOIN QUEUE -----------------
+    // --- Queue Join/Leave ---
     if (interaction.customId === 'join_queue') {
-      if (!playerInQueue) {
-        queue.push({ id: userId, name: playerNickname, elo, status: 'waiting' });
-        await sendOrUpdateQueueMessage(client);
+      if (!queue.find(u => u.id === userId)) {
+        queue.push({ id: userId, name, elo, status: 'waiting' });
       }
+      await sendOrUpdateQueueMessage(client);
+      await processPendingMatchups(client);
       return;
     }
 
-    // ----------------- LEAVE QUEUE -----------------
     if (interaction.customId === 'leave_queue') {
-      if (playerInQueue) {
-        // Remove pendingPair reference
-        if (playerInQueue.pendingPairId) {
-          const partner = queue.find(u => u.id === playerInQueue.pendingPairId);
-          if (partner) {
-            delete partner.pendingPairId;
-            delete partner.matchupMessageSent;
-            delete partner.matchupMessage;
-          }
+      const leavingPlayer = queue.find(u => u.id === userId);
+      if (leavingPlayer) {
+        delete leavingPlayer.matchupMessageSent;
+        if (leavingPlayer.pendingPairId) {
+          const partner = queue.find(u => u.id === leavingPlayer.pendingPairId);
+          if (partner) delete partner.matchupMessageSent;
         }
       }
       queue = queue.filter(u => u.id !== userId);
@@ -283,27 +278,23 @@ async function handleInteraction(interaction, client) {
       return;
     }
 
-    // ----------------- ACKNOWLEDGE BUTTONS -----------------
-    if (
-      interaction.customId.startsWith('ack_play_') ||
-      interaction.customId.startsWith('ack_decline_')
-    ) {
-      if (!playerInQueue || !playerInQueue.pendingPairId) return;
-
-      // Restrict buttons
+    // --- Ack buttons ---
+    if (interaction.customId.startsWith('ack_play_') || interaction.customId.startsWith('ack_decline_')) {
+      // Restrict buttons to correct player
       if (!interaction.customId.endsWith(userId)) {
         await interaction.reply({ content: "❌ This button is not for you.", ephemeral: true });
         return;
       }
 
-      const partner = queue.find(u => u.id === playerInQueue.pendingPairId);
+      const player = queue.find(u => u.id === userId);
+      if (!player || !player.pendingPairId) return;
+      const partner = queue.find(u => u.id === player.pendingPairId);
 
-      // PLAY BUTTON
       if (interaction.customId.startsWith('ack_play_')) {
-        playerInQueue.status = 'acknowledged';
-        playerInQueue.acknowledged = true;
+        player.status = 'acknowledged';
+        player.acknowledged = true;
 
-        // Disable clicked buttons
+        // disable their buttons
         const disabledRow = interaction.message.components.map(row => {
           row.components.forEach(btn => btn.setDisabled(true));
           return row;
@@ -312,51 +303,49 @@ async function handleInteraction(interaction, client) {
 
         // Both acknowledged?
         if (partner && partner.acknowledged) {
-          try { if (playerInQueue.matchupMessage) await playerInQueue.matchupMessage.delete(); } catch {}
+          try { if (player.matchupMessage) await player.matchupMessage.delete(); } catch {}
           try { if (partner.matchupMessage) await partner.matchupMessage.delete(); } catch {}
 
+          // Send to rated channel
           const nhlEmojiMap = getNHLEmojiMap();
+          const homeTeam = player.homeTeam;
+          const awayTeam = player.awayTeam;
           const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
-
           await ratedChannel.send(
             `🎮 Rated Game Matchup!\n` +
-            `Away: <@${partner.id}> [${partner.elo}] : ${nhlEmojiMap[partner.awayTeam]}\n` +
-            `Home: <@${playerInQueue.id}> [${playerInQueue.elo}] : ${nhlEmojiMap[playerInQueue.homeTeam]}`
+            `Away: <@${partner.id}> [${partner.elo}] : ${nhlEmojiMap[awayTeam]}\n` +
+            `Home: <@${player.id}> [${player.elo}] : ${nhlEmojiMap[homeTeam]}`
           );
 
           // Remove both from queue
-          queue = queue.filter(u => ![playerInQueue.id, partner.id].includes(u.id));
+          queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
 
           // Update queue window
           await sendOrUpdateQueueMessage(client);
         }
       }
 
-      // DON'T PLAY BUTTON
-      else if (interaction.customId.startsWith('ack_decline_')) {
+      if (interaction.customId.startsWith('ack_decline_')) {
+        // Partner back to waiting
         if (partner) {
           partner.status = 'waiting';
           delete partner.pendingPairId;
           delete partner.matchupMessageSent;
-          delete partner.matchupMessage;
-          try {
-            const partnerUser = await client.users.fetch(partner.id);
-            partnerUser.send(`Your opponent <@${playerInQueue.id}> declined the matchup. You have been returned to the queue.`).catch(() => {});
-          } catch {}
         }
 
-        // Remove player from queue and delete ack message
+        // Remove declining player
         queue = queue.filter(u => u.id !== userId);
-        try { if (playerInQueue.matchupMessage) await playerInQueue.matchupMessage.delete(); } catch {}
+
+        // Delete ack message
+        try { if (player.matchupMessage) await player.matchupMessage.delete(); } catch {}
         await interaction.message.delete().catch(() => {});
 
-        // Update queue window
+        // Update queue
         await sendOrUpdateQueueMessage(client);
       }
 
-      // Only process pending matchups once
+      // Process remaining pending matchups
       await processPendingMatchups(client);
-      return;
     }
 
   } catch (err) {
