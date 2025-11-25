@@ -125,29 +125,30 @@ async function buildQueueEmbed(client) {
 let processingMatchups = false; // GLOBAL LOCK
 
 async function processPendingMatchups(client) {
-  if (processingMatchups) return;        // ⛔ already running
-  processingMatchups = true;             // 🔒 acquire lock
+  if (processingMatchups) return; // ⛔ already running
+  processingMatchups = true;
 
   try {
-    const waitingPlayers = queue.filter(u => u.status === 'waiting');
+    const waitingPlayers = queue.filter(u => u.status === 'waiting' && !u.matchupMessageSent);
+    if (waitingPlayers.length < 2) return; // nothing to pair
+
     const nhlEmojiMap = getNHLEmojiMap();
     const teams = Object.keys(nhlEmojiMap);
-
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
 
     for (let i = 0; i + 1 < waitingPlayers.length; i += 2) {
       const p1 = waitingPlayers[i];
       const p2 = waitingPlayers[i + 1];
 
-      // Skip if already paired or already sent
-      if (p1.status !== 'waiting' || p2.status !== 'waiting') continue;
-      if (p1.matchupMessageSent || p2.matchupMessageSent) continue;
+      if (p1.matchupMessageSent || p2.matchupMessageSent) continue; // skip already sent
 
-      // 🔥 Mark them as pending IMMEDIATELY
+      // Mark pending immediately
       p1.status = 'pending';
       p2.status = 'pending';
       p1.pendingPairId = p2.id;
       p2.pendingPairId = p1.id;
+      p1.matchupMessageSent = true;
+      p2.matchupMessageSent = true;
 
       // Pick random teams
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
@@ -155,67 +156,37 @@ async function processPendingMatchups(client) {
       while (awayTeam === homeTeam) {
         awayTeam = teams[Math.floor(Math.random() * teams.length)];
       }
+
       p1.homeTeam = homeTeam;
       p1.awayTeam = awayTeam;
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
-      // Embed with title + instructions
       const pendingEmbed = new EmbedBuilder()
         .setTitle('🎮 Matchup Pending Acknowledgment')
-        .setColor('#ffff00')
-        .setTimestamp()
-        .addFields(
-          { name: '🚌 Away', value: `${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}` },
-          { name: '\u200B', value: '\u200B' }, // spacer field for separation
-          { name: '🏠 Home', value: `${p1.name} [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}` }
+        .setDescription(
+          `🚌 Away\n${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n\n` +
+          `🏠 Home\n${p1.name} [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}\n\n` +
+          `Each player, please acknowledge using the buttons below.`
         )
-        .setFooter({ text: 'Each player, please acknowledge using the buttons below.' });
+        .setColor('#ffff00')
+        .setTimestamp();
 
-      // Button rows
-      const awayRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`ack_play_${p2.id}`)
-          .setLabel('Play')
-          .setEmoji(nhlEmojiMap[p2.awayTeam])
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId(`ack_decline_${p2.id}`)
-          .setLabel("Don't Play")
-          .setEmoji(nhlEmojiMap[p2.awayTeam])
-          .setStyle(ButtonStyle.Danger)
-      );
+      const awayRow = buildAckButtons(p2.id, nhlEmojiMap[p2.awayTeam]);
+      const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
 
-      const homeRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`ack_play_${p1.id}`)
-          .setLabel('Play')
-          .setEmoji(nhlEmojiMap[p1.homeTeam])
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId(`ack_decline_${p1.id}`)
-          .setLabel("Don't Play")
-          .setEmoji(nhlEmojiMap[p1.homeTeam])
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      // Send single message with embed + separate button rows
       await channel.send({
         embeds: [pendingEmbed],
-        components: [awayRow, homeRow]
+        components: [awayRow, homeRow],
       });
-
-      p1.matchupMessageSent = true;
-      p2.matchupMessageSent = true;
     }
 
-    // Update queue UI once
     await sendOrUpdateQueueMessage(client);
-
   } finally {
-    processingMatchups = false;  // 🔓 release lock
+    processingMatchups = false;
   }
 }
+
 
 
 // ----------------- Interaction handler -----------------
