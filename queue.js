@@ -112,25 +112,27 @@ async function buildQueueEmbed(client) {
 }
 
 // ----------------- Pairing processor -----------------
-// ----------------- Pairing processor -----------------
 async function processPendingMatchups(client) {
   const waitingPlayers = queue.filter(u => u.status === 'waiting');
   const nhlEmojiMap = getNHLEmojiMap();
   const teams = Object.keys(nhlEmojiMap);
 
   const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+  const pendingPairsSent = new Set();
 
   for (let i = 0; i + 1 < waitingPlayers.length; i += 2) {
     const p1 = waitingPlayers[i];
     const p2 = waitingPlayers[i + 1];
-    if (p1.status !== 'waiting' || p2.status !== 'waiting') continue;
 
-    // Pick random teams once for the pair
+    if (p1.status !== 'waiting' || p2.status !== 'waiting') continue;
+    if (pendingPairsSent.has(p1.id) || pendingPairsSent.has(p2.id)) continue;
+
+    // Pick random teams for the pair
     let homeTeam = teams[Math.floor(Math.random() * teams.length)];
     let awayTeam = teams[Math.floor(Math.random() * teams.length)];
     while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
 
-    // Store the teams in the player objects so both matchup and rated game use the same teams
+    // Store teams in both player objects
     p1.homeTeam = homeTeam;
     p1.awayTeam = awayTeam;
     p2.homeTeam = homeTeam;
@@ -153,17 +155,20 @@ async function processPendingMatchups(client) {
       .setColor('#ffff00')
       .setTimestamp();
 
-    // Send two separate rows for buttons so each player’s buttons are visually below their info
+    // Buttons per player
     const ackRowAway = buildAckButtons(p2.id, `<@${p2.id}>`);
     const ackRowHome = buildAckButtons(p1.id, `<@${p1.id}>`);
 
+    // Send message for this pair
     await channel.send({ embeds: [pendingEmbed], components: [ackRowAway, ackRowHome] });
+
+    pendingPairsSent.add(p1.id);
+    pendingPairsSent.add(p2.id);
   }
 
-  // Update the main queue window only once
+  // Update main queue once at the end
   await sendOrUpdateQueueMessage(client);
 }
-
 
 // ----------------- Interaction handler -----------------
 async function handleInteraction(interaction, client) {
@@ -198,7 +203,6 @@ async function handleInteraction(interaction, client) {
       return;
     }
     const elo = parseInt(rsRow[38], 10);
-
     const name = playerNickname;
 
     if (interaction.customId === 'join_queue') {
@@ -247,7 +251,9 @@ async function handleInteraction(interaction, client) {
       }
     }
 
+    // Only call processPendingMatchups once
     await processPendingMatchups(client);
+
   } catch (err) {
     console.error('❌ Error handling interaction:', err);
   }
@@ -258,13 +264,21 @@ async function resetQueueChannel(client) {
   try {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const messages = await channel.messages.fetch({ limit: 50 });
+
+    // Delete all existing messages
     for (const msg of messages.values()) {
       try { await msg.delete(); } catch {}
     }
+
+    // Reset queue and clear any matchup flags
     queue = [];
+
     console.log('🧹 Queue channel reset; all old messages removed');
-    await processPendingMatchups(client);
+
+    // Rebuild queue window (will show empty queue)
     await sendOrUpdateQueueMessage(client);
+
+    // No need to call processPendingMatchups() here — queue is empty
   } catch (err) {
     console.error('❌ Error resetting queue channel:', err);
   }
