@@ -319,22 +319,20 @@ async function handleInteraction(interaction, client) {
 async function resetQueueChannel(client) {
   try {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-    const messages = await channel.messages.fetch({ limit: 50 });
+    const messages = await channel.messages.fetch({ limit: 100 });
 
-    // Delete all existing messages
+    // Delete all messages
     for (const msg of messages.values()) {
       try { await msg.delete(); } catch {}
     }
 
-    // Reset queue and clear any matchup flags
-    queue = [];
+    // Reset in-memory queue
+    queue.length = 0;
 
-    console.log('🧹 Queue channel reset; all old messages removed');
+    console.log('🧹 Queue channel reset; all messages removed');
 
-    // Rebuild queue window (will show empty queue)
+    // Rebuild empty queue window
     await sendOrUpdateQueueMessage(client);
-
-    // No need to call processPendingMatchups() here — queue is empty
   } catch (err) {
     console.error('❌ Error resetting queue channel:', err);
   }
