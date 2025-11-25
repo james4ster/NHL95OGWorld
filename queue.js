@@ -1,3 +1,12 @@
+// queue.js
+/*
+Persistent NHL ’95 Queue System
+- Fetches nicknames & ELO from Google Sheets
+- Pairing players for matches
+- Play / Don't Play buttons with proper handling
+- Deletes matchup messages as needed
+*/
+
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import { google } from 'googleapis';
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
@@ -6,9 +15,6 @@ let queue = [];
 
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
 const RATED_GAMES_CHANNEL_ID = process.env.RATED_GAMES_CHANNEL_ID;
-
-// Timeout for acknowledgment
-const ACK_TIMEOUT = 5 * 60 * 1000;
 
 // ----------------- Buttons -----------------
 function buildQueueButtons() {
@@ -20,13 +26,21 @@ function buildQueueButtons() {
 
 function buildAckButtons(playerId, emoji) {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`ack_play_${playerId}`).setLabel('Play').setEmoji(emoji).setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`ack_decline_${playerId}`).setLabel("Don't Play").setEmoji(emoji).setStyle(ButtonStyle.Danger)
+    new ButtonBuilder()
+      .setCustomId(`ack_play_${playerId}`)
+      .setLabel('Play')
+      .setEmoji(emoji)
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`ack_decline_${playerId}`)
+      .setLabel("Don't Play")
+      .setEmoji(emoji)
+      .setStyle(ButtonStyle.Danger)
   );
 }
 
 // ----------------- Queue Embed -----------------
-async function buildQueueEmbed(client) {
+async function buildQueueEmbed() {
   if (queue.length === 0) {
     return new EmbedBuilder()
       .setTitle('🎮 NHL ’95 Game Queue')
@@ -38,25 +52,12 @@ async function buildQueueEmbed(client) {
   const list = queue
     .map((u, i) => {
       let statusEmoji = '';
-      if (u.status === 'pending') statusEmoji = '🟡';
+      if (u.status === 'waiting') statusEmoji = '🟡';
+      else if (u.status === 'pending') statusEmoji = '🟠';
       else if (u.status === 'acknowledged') statusEmoji = '✅';
       return `${i + 1}. ${u.name} [${u.elo}] ${statusEmoji}`;
     })
     .join('\n');
-
-  const pendingPlayers = queue.filter(u => u.status === 'pending' && u.pendingPairId);
-  let pendingDesc = '';
-  const seen = new Set();
-  for (const p of pendingPlayers) {
-    if (seen.has(p.id)) continue;
-    const partner = queue.find(x => x.id === p.pendingPairId);
-    if (!partner) continue;
-    const pEmoji = p.status === 'pending' ? '🟡' : '✅';
-    const partnerEmoji = partner.status === 'pending' ? '🟡' : '✅';
-    pendingDesc += `- ${p.name} [${p.elo}] ${pEmoji} vs ${partner.name} [${partner.elo}] ${partnerEmoji}\n`;
-    seen.add(p.id);
-    seen.add(partner.id);
-  }
 
   const embed = new EmbedBuilder()
     .setTitle('🎮 NHL ’95 Game Queue')
@@ -64,7 +65,6 @@ async function buildQueueEmbed(client) {
     .setColor('#0099ff')
     .setTimestamp();
 
-  if (pendingDesc) embed.addFields({ name: 'Pending Matches', value: pendingDesc });
   return embed;
 }
 
@@ -72,11 +72,13 @@ async function buildQueueEmbed(client) {
 async function sendOrUpdateQueueMessage(client) {
   try {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-    const embed = await buildQueueEmbed(client);
+    const embed = await buildQueueEmbed();
 
     let existing = null;
     if (client.queueMessageId) {
-      try { existing = await channel.messages.fetch(client.queueMessageId); } catch {}
+      try {
+        existing = await channel.messages.fetch(client.queueMessageId);
+      } catch {}
     }
 
     if (existing) {
@@ -97,6 +99,32 @@ async function sendOrUpdateQueueMessage(client) {
   }
 }
 
+// ----------------- Google Sheets Helper -----------------
+async function fetchPlayerData(discordId) {
+  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  const [pmRes, rsRes] = await Promise.all([
+    sheets.spreadsheets.values.get({ spreadsheetId: process.env.SPREADSHEET_ID, range: 'PlayerMaster!A:C' }),
+    sheets.spreadsheets.values.get({ spreadsheetId: process.env.SPREADSHEET_ID, range: 'RawStandings!A:AM' })
+  ]);
+
+  const playerMasterData = pmRes.data.values || [];
+  const rawStandingsData = rsRes.data.values || [];
+
+  const pmRow = playerMasterData.find(r => r[0]?.trim() === discordId);
+  const nickname = pmRow ? pmRow[2]?.trim() : null;
+
+  const rsRow = rawStandingsData.find(r => r[0]?.trim() === nickname);
+  const elo = rsRow ? parseInt(rsRow[38], 10) : 1500;
+
+  return { nickname: nickname || 'Unknown', elo };
+}
+
 // ----------------- Pairing processor -----------------
 let processingMatchups = false;
 
@@ -106,7 +134,7 @@ async function processPendingMatchups(client) {
 
   try {
     const waitingPlayers = queue.filter(u => u.status === 'waiting');
-    if (waitingPlayers.length < 2) return; // don't assign incomplete pairs
+    if (waitingPlayers.length < 2) return;
 
     const nhlEmojiMap = getNHLEmojiMap();
     const teams = Object.keys(nhlEmojiMap);
@@ -134,7 +162,7 @@ async function processPendingMatchups(client) {
 
       const awayContent =
         `🎮 Matchup Pending Acknowledgment\nEach player, please acknowledge using the buttons below.\n\n` +
-        `🚌 Away\n<@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}`;
+        `🚌 Away\n<@${p2.id}> ${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}`;
 
       const awayRow = buildAckButtons(p2.id, nhlEmojiMap[p2.awayTeam]);
       const awayMsg = await channel.send({ content: awayContent, components: [awayRow] });
@@ -142,7 +170,8 @@ async function processPendingMatchups(client) {
 
       const homeContent =
         `──────────────────────────\n\n` +
-        `🏠 Home\n<@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}`;
+        `🏠 Home\n<@${p1.id}> ${p1.name} [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}`;
+
       const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
       const homeMsg = await channel.send({ content: homeContent, components: [homeRow] });
       p1.matchupMessage = homeMsg;
@@ -162,16 +191,20 @@ async function handleInteraction(interaction, client) {
   try {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
 
-    // --- Queue Join/Leave ---
+    // --- Queue Join ---
     if (interaction.customId === 'join_queue') {
+      const { nickname, elo } = await fetchPlayerData(userId);
+
       if (!queue.find(u => u.id === userId)) {
-        queue.push({ id: userId, name: interaction.user.username, elo: 1500, status: 'waiting' });
+        queue.push({ id: userId, name: nickname, elo, status: 'waiting' });
       }
+
       await sendOrUpdateQueueMessage(client);
       await processPendingMatchups(client);
       return;
     }
 
+    // --- Queue Leave ---
     if (interaction.customId === 'leave_queue') {
       const leavingPlayer = queue.find(u => u.id === userId);
       if (leavingPlayer) {
@@ -189,7 +222,7 @@ async function handleInteraction(interaction, client) {
       return;
     }
 
-    // --- Ack buttons ---
+    // --- Acknowledge Play / Decline ---
     if (interaction.customId.startsWith('ack_play_') || interaction.customId.startsWith('ack_decline_')) {
       if (!interaction.customId.endsWith(userId)) {
         await interaction.reply({ content: "❌ This button is not for you.", ephemeral: true });
@@ -200,6 +233,7 @@ async function handleInteraction(interaction, client) {
       if (!player || !player.pendingPairId) return;
       const partner = queue.find(u => u.id === player.pendingPairId);
 
+      // --- Play ---
       if (interaction.customId.startsWith('ack_play_')) {
         player.status = 'acknowledged';
         player.acknowledged = true;
@@ -213,6 +247,7 @@ async function handleInteraction(interaction, client) {
 
         await sendOrUpdateQueueMessage(client);
 
+        // If both acknowledged, send to rated games
         if (partner && partner.acknowledged) {
           try { if (player.matchupMessage) await player.matchupMessage.delete(); } catch {}
           try { if (partner.matchupMessage) await partner.matchupMessage.delete(); } catch {}
@@ -220,7 +255,7 @@ async function handleInteraction(interaction, client) {
           const nhlEmojiMap = getNHLEmojiMap();
           const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
           await ratedChannel.send(
-            `🎮 Rated Game Matchup!\nAway: <@${partner.id}> [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\nHome: <@${player.id}> [${player.elo}] ${nhlEmojiMap[player.homeTeam]}`
+            `🎮 Rated Game Matchup!\nAway: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\nHome: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}`
           );
 
           queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
@@ -228,18 +263,23 @@ async function handleInteraction(interaction, client) {
         }
       }
 
+      // --- Don't Play ---
       if (interaction.customId.startsWith('ack_decline_')) {
-        queue = queue.filter(u => u.id !== userId);
-        if (partner) {
+        if (partner && partner.matchupMessage) {
+          try { await partner.matchupMessage.delete(); } catch {}
           partner.status = 'waiting';
           delete partner.pendingPairId;
           delete partner.matchupMessage;
+          delete partner.acknowledged;
         }
-        try { if (player.matchupMessage) await player.matchupMessage.delete(); } catch {}
+        if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
+        queue = queue.filter(u => u.id !== userId);
+
         await sendOrUpdateQueueMessage(client);
         await processPendingMatchups(client);
       }
     }
+
   } catch (err) {
     console.error('❌ Error handling interaction:', err);
   }
