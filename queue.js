@@ -155,7 +155,7 @@ async function processPendingMatchups(client) {
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
-      // Build buttons
+      // Build button rows
       const awayRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`ack_play_${p2.id}`)
@@ -182,13 +182,16 @@ async function processPendingMatchups(client) {
           .setStyle(ButtonStyle.Danger)
       );
 
-      // Send a single message with instructions first
-      const instructions = '🎮 Matchup Pending Acknowledgment\nEach player, please acknowledge using the buttons below.';
-      const awayContent = `\n🚌 Away\n<@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}`;
-      const homeContent = `\n──────────────────────────\n\n🏠 Home\n<@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}`;
+      // Single message content
+      const content = 
+        `🎮 Matchup Pending Acknowledgment\n` +
+        `Each player, please acknowledge using the buttons below.\n\n` +
+        `🚌 Away\n<@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n\n` +
+        `──────────────────────────\n\n` +
+        `🏠 Home\n<@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}`;
 
       await channel.send({
-        content: `${instructions}${awayContent}${homeContent}`,
+        content,
         components: [awayRow, homeRow]
       });
 
@@ -202,6 +205,7 @@ async function processPendingMatchups(client) {
     processingMatchups = false;
   }
 }
+
 
 
 // ----------------- Interaction handler -----------------
