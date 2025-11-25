@@ -10,8 +10,6 @@ import { google } from 'googleapis';
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
 
 let queue = [];
-let processingMatchups = false;  // Flag to prevent concurrent processing
-
 
 // Queue & rated games channels
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
@@ -121,9 +119,11 @@ async function buildQueueEmbed(client) {
 }
 
 // ----------------- Pairing processor -----------------
+let processingMatchups = false; // GLOBAL LOCK
+
 async function processPendingMatchups(client) {
-  if (processingMatchups) return;   // prevents double run
-  processingMatchups = true;
+  if (processingMatchups) return;        // ⛔ already running
+  processingMatchups = true;             // 🔒 acquire lock
 
   try {
     const waitingPlayers = queue.filter(u => u.status === 'waiting');
@@ -136,62 +136,61 @@ async function processPendingMatchups(client) {
       const p1 = waitingPlayers[i];
       const p2 = waitingPlayers[i + 1];
 
+      // Skip if already paired
       if (p1.status !== 'waiting' || p2.status !== 'waiting') continue;
       if (p1.matchupMessageSent || p2.matchupMessageSent) continue;
 
-      // — your existing team randomization code —
+      // 🔥 Mark them as pending IMMEDIATELY so second call can't reuse them
+      p1.status = 'pending';
+      p2.status = 'pending';
 
-      // NEW EMBED
+      p1.pendingPairId = p2.id;
+      p2.pendingPairId = p1.id;
+
+      // Pick random teams
+      let homeTeam = teams[Math.floor(Math.random() * teams.length)];
+      let awayTeam = teams[Math.floor(Math.random() * teams.length)];
+      while (awayTeam === homeTeam) {
+        awayTeam = teams[Math.floor(Math.random() * teams.length)];
+      }
+
+      p1.homeTeam = homeTeam;
+      p1.awayTeam = awayTeam;
+      p2.homeTeam = homeTeam;
+      p2.awayTeam = awayTeam;
+
+      // Build embed
       const pendingEmbed = new EmbedBuilder()
         .setTitle('🎮 Matchup Pending Acknowledgment')
-        .setColor('#ffff00')
         .setDescription(
-          `### 🚌 Away\n` +
-          `<@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n\n` +
-          `### 🏠 Home\n` +
-          `<@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}\n\n` +
-          `_Each player, please acknowledge by clicking your buttons below._`
+          `🚌 **Away**\n<@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n\n` +
+          `🏠 **Home**\n<@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}\n\n` +
+          `Each player, please acknowledge by clicking your buttons below.`
         )
+        .setColor('#ffff00')
         .setTimestamp();
 
-      // FIX BUTTON LABELS — NO MENTION, JUST TEXT
-      const ackRowAway = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`ack_play_${p2.id}`)
-          .setLabel('Play')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId(`ack_decline_${p2.id}`)
-          .setLabel("Don't Play")
-          .setStyle(ButtonStyle.Danger)
-      );
+      const awayRow = buildAckButtons(p2.id, `${nhlEmojiMap[p2.awayTeam]}`);
+      const homeRow = buildAckButtons(p1.id, `${nhlEmojiMap[p1.homeTeam]}`);
 
-      const ackRowHome = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`ack_play_${p1.id}`)
-          .setLabel('Play')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId(`ack_decline_${p1.id}`)
-          .setLabel("Don't Play")
-          .setStyle(ButtonStyle.Danger)
-      );
-
+      // Send message (no second call can occur now because they’re marked pending)
       await channel.send({
         embeds: [pendingEmbed],
-        components: [ackRowAway, ackRowHome]
+        components: [awayRow, homeRow]
       });
 
       p1.matchupMessageSent = true;
       p2.matchupMessageSent = true;
     }
 
+    // Update queue UI once
     await sendOrUpdateQueueMessage(client);
 
   } finally {
-    processingMatchups = false;
+    processingMatchups = false;  // 🔓 release lock
   }
 }
+
 
 
 
