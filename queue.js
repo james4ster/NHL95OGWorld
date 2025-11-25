@@ -118,33 +118,33 @@ async function processPendingMatchups(client) {
   const teams = Object.keys(nhlEmojiMap);
 
   const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-  const pendingPairsSent = new Set();
 
   for (let i = 0; i + 1 < waitingPlayers.length; i += 2) {
     const p1 = waitingPlayers[i];
     const p2 = waitingPlayers[i + 1];
 
+    // Skip if not waiting or if matchup already sent
     if (p1.status !== 'waiting' || p2.status !== 'waiting') continue;
-    if (pendingPairsSent.has(p1.id) || pendingPairsSent.has(p2.id)) continue;
+    if (p1.matchupMessageSent || p2.matchupMessageSent) continue;
 
-    // Pick random teams for the pair
+    // Pick random teams
     let homeTeam = teams[Math.floor(Math.random() * teams.length)];
     let awayTeam = teams[Math.floor(Math.random() * teams.length)];
     while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
 
-    // Store teams in both player objects
+    // Store teams in player objects
     p1.homeTeam = homeTeam;
     p1.awayTeam = awayTeam;
     p2.homeTeam = homeTeam;
     p2.awayTeam = awayTeam;
 
-    // Mark them as pending and store pair info
+    // Mark as pending and store pair info
     p1.status = 'pending';
     p2.status = 'pending';
     p1.pendingPairId = p2.id;
     p2.pendingPairId = p1.id;
 
-    // Build embed with matchup info
+    // Build embed
     const pendingEmbed = new EmbedBuilder()
       .setTitle('🎮 Matchup Pending Acknowledgment')
       .setDescription(
@@ -162,11 +162,12 @@ async function processPendingMatchups(client) {
     // Send message for this pair
     await channel.send({ embeds: [pendingEmbed], components: [ackRowAway, ackRowHome] });
 
-    pendingPairsSent.add(p1.id);
-    pendingPairsSent.add(p2.id);
+    // Set persistent flag
+    p1.matchupMessageSent = true;
+    p2.matchupMessageSent = true;
   }
 
-  // Update main queue once at the end
+  // Update main queue once
   await sendOrUpdateQueueMessage(client);
 }
 
@@ -192,11 +193,9 @@ async function handleInteraction(interaction, client) {
     const playerMasterData = pmRes.data.values || [];
     const rawStandingsData = rsRes.data.values || [];
 
-    // Lookup nickname by Discord ID
     const pmRow = playerMasterData.find(r => r[0]?.trim() === userId);
     const playerNickname = pmRow ? pmRow[2]?.trim() : interaction.user.username;
 
-    // Lookup ELO from RawStandings column AM (index 38)
     const rsRow = rawStandingsData.find(r => r[0]?.trim() === playerNickname);
     if (!rsRow) {
       console.warn('⚠️ Could not find ELO for player:', playerNickname);
@@ -210,6 +209,14 @@ async function handleInteraction(interaction, client) {
         queue.push({ id: userId, name, elo, status: 'waiting' });
       }
     } else if (interaction.customId === 'leave_queue') {
+      const leavingPlayer = queue.find(u => u.id === userId);
+      if (leavingPlayer) {
+        delete leavingPlayer.matchupMessageSent;
+        if (leavingPlayer.pendingPairId) {
+          const partner = queue.find(u => u.id === leavingPlayer.pendingPairId);
+          if (partner) delete partner.matchupMessageSent;
+        }
+      }
       queue = queue.filter(u => u.id !== userId);
     } else if (interaction.customId.startsWith('ack_play_')) {
       const player = queue.find(u => u.id === userId);
@@ -219,7 +226,6 @@ async function handleInteraction(interaction, client) {
       const partner = queue.find(u => u.id === player.pendingPairId);
 
       if (partner && partner.status === 'acknowledged') {
-        // Both acked — use pending pair teams
         const nhlEmojiMap = getNHLEmojiMap();
         const homeTeam = player.homeTeam;
         const awayTeam = player.awayTeam;
@@ -231,6 +237,7 @@ async function handleInteraction(interaction, client) {
           `Home: <@${player.id}> [${player.elo}]: ${nhlEmojiMap[homeTeam]}`
         );
 
+        // Remove both from queue
         queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
       }
     } else if (interaction.customId.startsWith('ack_decline_')) {
@@ -241,17 +248,19 @@ async function handleInteraction(interaction, client) {
           if (partner) {
             partner.status = 'waiting';
             delete partner.pendingPairId;
+            delete partner.matchupMessageSent;
             try { 
               const partnerUser = await client.users.fetch(partner.id);
               partnerUser.send(`Your opponent <@${player.id}> declined the matchup. You have been returned to the queue.`).catch(() => {});
             } catch {}
           }
         }
+        delete player.matchupMessageSent;
         queue = queue.filter(u => u.id !== userId);
       }
     }
 
-    // Only call processPendingMatchups once
+    // Only call once
     await processPendingMatchups(client);
 
   } catch (err) {
