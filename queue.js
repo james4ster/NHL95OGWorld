@@ -216,7 +216,7 @@ async function handleInteraction(interaction, client) {
   const userId = interaction.user.id;
 
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+    //if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
 
     // --- Queue Join ---
     if (interaction.customId === 'join_queue') {
