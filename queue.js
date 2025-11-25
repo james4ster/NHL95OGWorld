@@ -164,24 +164,49 @@ async function processPendingMatchups(client) {
 
       // Build embed
       const pendingEmbed = new EmbedBuilder()
-      .setTitle('🎮 Matchup Pending Acknowledgment')
-      .setDescription(
-        `🚌 **Away**\n` +
-        `<@${p2.id}> [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n\n` +
-        `──────────────────────────\n\n` +
-        `🏠 **Home**\n` +
-        `<@${p1.id}> [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}\n\n` +
-        `Each player, please acknowledge using the buttons below.`
-      )
-      .setColor('#ffff00')
-      .setTimestamp();
+        .setTitle('🎮 Matchup Pending Acknowledgment')
+        .setDescription(
+          `🚌 **Away**\n` +
+          `${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n\n` +
+          `──────────────────────────\n\n` +
+          `🏠 **Home**\n` +
+          `${p1.name} [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}\n\n` +
+          `Each player, please acknowledge using the buttons below.`
+        )
+        .setColor('#ffff00')
+        .setTimestamp();
 
-      const awayRow = buildAckButtons(p2.id, nhlEmojiMap[p2.awayTeam]);
-      const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
+      // Build button rows with player name above buttons
+      const awayRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`ack_play_${p2.id}`)
+          .setLabel('Play')
+          .setEmoji(nhlEmojiMap[p2.awayTeam])
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`ack_decline_${p2.id}`)
+          .setLabel("Don't Play")
+          .setEmoji(nhlEmojiMap[p2.awayTeam])
+          .setStyle(ButtonStyle.Danger)
+      );
 
-      // Send message (no second call can occur now because they’re marked pending)
+      const homeRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`ack_play_${p1.id}`)
+          .setLabel('Play')
+          .setEmoji(nhlEmojiMap[p1.homeTeam])
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`ack_decline_${p1.id}`)
+          .setLabel("Don't Play")
+          .setEmoji(nhlEmojiMap[p1.homeTeam])
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      // Send message
       await channel.send({
         embeds: [pendingEmbed],
+        content: `🚌 Away: ${p2.name}\n🏠 Home: ${p1.name}`, // optional: add above rows
         components: [awayRow, homeRow]
       });
 
