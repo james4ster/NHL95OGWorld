@@ -139,14 +139,13 @@ async function processPendingMatchups(client) {
       const p1 = waitingPlayers[i];
       const p2 = waitingPlayers[i + 1];
 
-      // Skip if already paired
+      // Skip if already paired or already sent
       if (p1.status !== 'waiting' || p2.status !== 'waiting') continue;
       if (p1.matchupMessageSent || p2.matchupMessageSent) continue;
 
-      // 🔥 Mark them as pending IMMEDIATELY so second call can't reuse them
+      // 🔥 Mark them as pending IMMEDIATELY
       p1.status = 'pending';
       p2.status = 'pending';
-
       p1.pendingPairId = p2.id;
       p2.pendingPairId = p1.id;
 
@@ -156,27 +155,24 @@ async function processPendingMatchups(client) {
       while (awayTeam === homeTeam) {
         awayTeam = teams[Math.floor(Math.random() * teams.length)];
       }
-
       p1.homeTeam = homeTeam;
       p1.awayTeam = awayTeam;
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
-      // Build embed
+      // Embed with title + instructions
       const pendingEmbed = new EmbedBuilder()
         .setTitle('🎮 Matchup Pending Acknowledgment')
-        .setDescription(
-          `🚌 **Away**\n` +
-          `${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}\n\n` +
-          `──────────────────────────\n\n` +
-          `🏠 **Home**\n` +
-          `${p1.name} [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}\n\n` +
-          `Each player, please acknowledge using the buttons below.`
-        )
         .setColor('#ffff00')
-        .setTimestamp();
+        .setTimestamp()
+        .addFields(
+          { name: '🚌 Away', value: `${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}` },
+          { name: '\u200B', value: '\u200B' }, // spacer field for separation
+          { name: '🏠 Home', value: `${p1.name} [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}` }
+        )
+        .setFooter({ text: 'Each player, please acknowledge using the buttons below.' });
 
-      // Build button rows with player name above buttons
+      // Button rows
       const awayRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`ack_play_${p2.id}`)
@@ -203,10 +199,9 @@ async function processPendingMatchups(client) {
           .setStyle(ButtonStyle.Danger)
       );
 
-      // Send message
+      // Send single message with embed + separate button rows
       await channel.send({
         embeds: [pendingEmbed],
-        content: `🚌 Away: ${p2.name}\n🏠 Home: ${p1.name}`, // optional: add above rows
         components: [awayRow, homeRow]
       });
 
@@ -221,8 +216,6 @@ async function processPendingMatchups(client) {
     processingMatchups = false;  // 🔓 release lock
   }
 }
-
-
 
 
 // ----------------- Interaction handler -----------------
