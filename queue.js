@@ -151,6 +151,7 @@ async function fetchPlayerData(discordId) {
 
 // ----------------- Pairing processor -----------------
 let processingMatchups = false;
+const MATCHUP_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 async function processPendingMatchups(client) {
   if (processingMatchups) return;
@@ -203,6 +204,39 @@ async function processPendingMatchups(client) {
 
       const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
       p1.matchupMessage = await channel.send({ content: homeContent, components: [homeRow] });
+
+      // Set up timeout for this matchup
+      const timeoutId = setTimeout(async () => {
+        try {
+          // Check if players are still in pending state (not yet acknowledged or completed)
+          const player1 = queue.find(u => u.id === p1.id);
+          const player2 = queue.find(u => u.id === p2.id);
+
+          if (player1 && player2 && player1.pendingPairId === p2.id) {
+            // Delete matchup messages
+            if (player1.matchupMessage) {
+              try { await player1.matchupMessage.delete(); } catch {}
+            }
+            if (player2.matchupMessage) {
+              try { await player2.matchupMessage.delete(); } catch {}
+            }
+
+            // Remove both players from queue
+            queue = queue.filter(u => ![p1.id, p2.id].includes(u.id));
+
+            // Update queue window
+            await sendOrUpdateQueueMessage(client);
+
+            console.log(`⏰ Matchup timed out: ${p1.name} vs ${p2.name}`);
+          }
+        } catch (err) {
+          console.error('❌ Error handling matchup timeout:', err);
+        }
+      }, MATCHUP_TIMEOUT_MS);
+
+      // Store timeout ID so we can cancel it if needed
+      p1.timeoutId = timeoutId;
+      p2.timeoutId = timeoutId;
     }
 
     await sendOrUpdateQueueMessage(client);
@@ -237,9 +271,18 @@ async function handleInteraction(interaction, client) {
     if (interaction.customId === 'leave_queue') {
       const leavingPlayer = queue.find(u => u.id === userId);
       if (leavingPlayer) {
+        // Cancel timeout if exists
+        if (leavingPlayer.timeoutId) {
+          clearTimeout(leavingPlayer.timeoutId);
+        }
+
         if (leavingPlayer.matchupMessage) try { await leavingPlayer.matchupMessage.delete(); } catch {}
         const partner = queue.find(u => u.id === leavingPlayer.pendingPairId);
         if (partner && partner.matchupMessage) {
+          // Cancel partner's timeout too
+          if (partner.timeoutId) {
+            clearTimeout(partner.timeoutId);
+          }
           try { await partner.matchupMessage.delete(); } catch {}
           partner.status = 'waiting';
           delete partner.pendingPairId;
@@ -276,6 +319,14 @@ async function handleInteraction(interaction, client) {
       if (interaction.customId.startsWith('ack_play_')) {
         player.acknowledged = true;
 
+        // Cancel timeout since player acknowledged
+        if (player.timeoutId) {
+          clearTimeout(player.timeoutId);
+        }
+        if (partner && partner.timeoutId) {
+          clearTimeout(partner.timeoutId);
+        }
+
         // Disable both buttons on this message
         const disabledRow = new ActionRowBuilder().addComponents(
           interaction.message.components[0].components.map(btn =>
@@ -307,6 +358,14 @@ async function handleInteraction(interaction, client) {
 
       // --- Don't Play ---
       if (interaction.customId.startsWith('ack_decline_')) {
+        // Cancel timeout since player declined
+        if (player.timeoutId) {
+          clearTimeout(player.timeoutId);
+        }
+        if (partner && partner.timeoutId) {
+          clearTimeout(partner.timeoutId);
+        }
+
         // Reset partner if exists
         if (partner && partner.matchupMessage) {
           try { await partner.matchupMessage.delete(); } catch {}
