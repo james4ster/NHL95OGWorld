@@ -158,7 +158,7 @@ async function processPendingMatchups(client) {
 
   try {
     // Only consider players that are waiting and not already paired
-    const waitingPlayers = queue.filter(u => u.status === 'waiting' && !u.pendingPairId);
+    const waitingPlayers = queue.filter(u => u.status === 'waiting' && !u.pendingPairId && !u.matchupMessage);
 
     if (waitingPlayers.length < 2) return;
 
@@ -170,8 +170,14 @@ async function processPendingMatchups(client) {
       const p1 = waitingPlayers[i];
       const p2 = waitingPlayers[i + 1];
 
-      // Skip if either player already has a matchup message (prevents duplicates)
-      if (p1.matchupMessage || p2.matchupMessage) continue;
+      // Double-check neither player has been paired since filtering
+      if (p1.pendingPairId || p2.pendingPairId || p1.matchupMessage || p2.matchupMessage) continue;
+
+      // Mark them as pending BEFORE sending messages to prevent race conditions
+      p1.status = 'pending';
+      p2.status = 'pending';
+      p1.pendingPairId = p2.id;
+      p2.pendingPairId = p1.id;
 
       // Randomize teams
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
@@ -197,12 +203,6 @@ async function processPendingMatchups(client) {
 
       const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
       p1.matchupMessage = await channel.send({ content: homeContent, components: [homeRow] });
-
-      // Mark them as pending **after messages sent**
-      p1.status = 'pending';
-      p2.status = 'pending';
-      p1.pendingPairId = p2.id;
-      p2.pendingPairId = p1.id;
     }
 
     await sendOrUpdateQueueMessage(client);
@@ -258,6 +258,10 @@ async function handleInteraction(interaction, client) {
 
       // Only allow the tagged player to click their own button
       if (userId !== targetPlayerId) {
+        await interaction.followUp({ 
+          content: '❌ This button is not for you! Only the tagged player can respond to their matchup.',
+          ephemeral: true 
+        });
         return;
       }
 
