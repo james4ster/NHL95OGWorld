@@ -11,11 +11,14 @@ export function handleGuildMemberAdd(client) {
     if (!channel) return;
 
     const message = `
-🧷 Welcome to the NHL95 World Training Ground... <@${member.id}>! You've just made the best decision of your life.
+🧷 Welcome to the NHL95 Online Circuit... <@${member.id}>! You've just made the best decision of your life.
 
 Here's some info to get you started:
 
-📝 You can find general information here: <#1433072699789545565>  
+📝 You're starting point should be here: <#1433072699789545565>  - This is where you will find the **SETUP INSTRUCTIONS**, as well as other general information, recommended controllers, etc.  
+
+❓If you have any questions, post them in the Help channel:  <#1435623708759949312>
+
 🕹️ You can grab the ROM from here: <#1433490791271104512> — you'll also find the link to the Google Sheet in there. To get edit access, DM your email to **TicklePuss**.
 
 PYGs...
