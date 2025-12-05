@@ -22,8 +22,8 @@ import { Client, GatewayIntentBits } from 'discord.js';
 import express from 'express';
 import { handleGuildMemberAdd } from './welcome.js';
 import { google } from 'googleapis';
-import fetch from 'node-fetch'; // only if not global
-import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel } from './queue.js';
+import fetch from 'node-fetch';
+import { sendOrUpdateQueueMessage, handleInteraction, initializeQueue } from './queue.js';
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
 import readOgRomBinaryGameState from "./gameStateParsing/game-state/read-og-rom-game-state.js";
 import fs from "node:fs/promises";
@@ -145,42 +145,32 @@ client.on('interactionCreate', async (interaction) => {
   await handleInteraction(interaction, client);
 });
 
-// === Discord Login + Queue Initialization ===
-(async () => {
-  if (!process.env.DISCORD_TOKEN) {
-    console.error('❌ DISCORD_TOKEN missing');
-    return;
-  }
-  try {
-    console.log('🔹 Logging in...');
-    await client.login(process.env.DISCORD_TOKEN);
-    console.log(`✅ Logged in as ${client.user.tag}`);
-  } catch (err) {
-    console.error('❌ Discord login failed:', err);
-  }
-})();
-
-// === Ready Event (v14) ===
-// ----------------- Ready Event -----------------
+// === Ready Event ===
 client.once('ready', async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
   console.log('🟢 Bot ready event fired');
   console.log('🔹 QUEUE_CHANNEL_ID:', QUEUE_CHANNEL_ID);
 
-  // Safeguard in case queue flush hangs
-  const timeout = setTimeout(() => {
-    console.warn('⚠️ Queue initialization taking too long, continuing...');
-  }, 10000); // 10s
-
   try {
-    const queueMsg = await resetQueueChannel(client, { clearMemory: false });
-    console.log('🔹 Queue message ready:', queueMsg?.id || 'No message returned');
+    await initializeQueue(client);
+    console.log('✅ Queue initialization complete');
   } catch (err) {
     console.error('❌ Error during queue initialization:', err);
-  } finally {
-    clearTimeout(timeout);
   }
 });
 
+// === Discord Login ===
+if (!process.env.DISCORD_TOKEN) {
+  console.error('❌ DISCORD_TOKEN missing');
+  process.exit(1);
+}
 
-
-
+console.log('🔹 Attempting Discord login...');
+client.login(process.env.DISCORD_TOKEN)
+  .then(() => {
+    console.log('🔹 Login request sent, waiting for ready event...');
+  })
+  .catch(err => {
+    console.error('❌ Discord login failed:', err);
+    process.exit(1);
+  });

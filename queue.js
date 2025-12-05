@@ -319,14 +319,6 @@ async function handleInteraction(interaction, client) {
       if (interaction.customId.startsWith('ack_play_')) {
         player.acknowledged = true;
 
-        // Cancel timeout since player acknowledged
-        if (player.timeoutId) {
-          clearTimeout(player.timeoutId);
-        }
-        if (partner && partner.timeoutId) {
-          clearTimeout(partner.timeoutId);
-        }
-
         // Disable both buttons on this message
         const disabledRow = new ActionRowBuilder().addComponents(
           interaction.message.components[0].components.map(btn =>
@@ -339,6 +331,14 @@ async function handleInteraction(interaction, client) {
 
         // If partner has also acknowledged, finalize matchup
         if (partner && partner.acknowledged) {
+          // Cancel timeout only when BOTH players have acknowledged
+          if (player.timeoutId) {
+            clearTimeout(player.timeoutId);
+          }
+          if (partner.timeoutId) {
+            clearTimeout(partner.timeoutId);
+          }
+
           // Delete matchup messages
           if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
           if (partner.matchupMessage) try { await partner.matchupMessage.delete(); } catch {}
