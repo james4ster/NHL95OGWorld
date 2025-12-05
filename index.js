@@ -137,8 +137,6 @@ client.on('guildMemberAdd', async (member) => {
 const app = express();
 app.use(express.json());
 app.get('/', (req, res) => res.send('🟢 NHL95OGBot is alive and ready!'));
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
 
 // === Interaction Handler ===
 client.on('interactionCreate', async (interaction) => {
@@ -159,23 +157,36 @@ client.once('ready', async () => {
   }
 });
 
-// === Discord Login ===
-if (!process.env.DISCORD_TOKEN) {
-  console.error('❌ DISCORD_TOKEN missing');
-  process.exit(1);
-}
+// === Main Startup Function ===
+async function startBot() {
+  // Check for required environment variables
+  if (!process.env.DISCORD_TOKEN) {
+    console.error('❌ DISCORD_TOKEN missing');
+    process.exit(1);
+  }
 
-console.log('🔹 Attempting Discord login...');
-console.log('🔹 Token present:', process.env.DISCORD_TOKEN ? 'Yes (length: ' + process.env.DISCORD_TOKEN.length + ')' : 'No');
+  try {
+    // Start Discord bot first
+    console.log('🔹 Attempting Discord login...');
+    console.log('🔹 Token present:', process.env.DISCORD_TOKEN ? 'Yes (length: ' + process.env.DISCORD_TOKEN.length + ')' : 'No');
 
-client.login(process.env.DISCORD_TOKEN)
-  .then(() => {
+    await client.login(process.env.DISCORD_TOKEN);
     console.log('🔹 Login promise resolved, waiting for ready event...');
-  })
-  .catch(err => {
+
+    // Start Express server after Discord login succeeds
+    const PORT = process.env.PORT || 10000;
+    app.listen(PORT, () => {
+      console.log(`🌐 Web server running on port ${PORT}`);
+    });
+
+  } catch (err) {
     console.error('❌ Discord login failed:');
     console.error('Error name:', err.name);
     console.error('Error message:', err.message);
     console.error('Full error:', err);
     process.exit(1);
-  });
+  }
+}
+
+// Start the bot
+startBot();
