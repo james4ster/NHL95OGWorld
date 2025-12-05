@@ -161,24 +161,26 @@ client.on('interactionCreate', async (interaction) => {
 })();
 
 // === Ready Event (v14) ===
+// ----------------- Ready Event -----------------
 client.once('ready', async () => {
   console.log('🟢 Bot ready event fired');
+  console.log('🔹 QUEUE_CHANNEL_ID:', QUEUE_CHANNEL_ID);
+
+  // Safeguard in case queue flush hangs
+  const timeout = setTimeout(() => {
+    console.warn('⚠️ Queue initialization taking too long, continuing...');
+  }, 10000); // 10s
 
   try {
-    console.log('🔹 QUEUE_CHANNEL_ID:', QUEUE_CHANNEL_ID);
-    const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-    console.log('🔹 Queue channel fetched:', channel.name);
-
-    const messages = await channel.messages.fetch({ limit: 5 });
-    console.log('🔹 Messages fetched:', messages.size);
-
     const queueMsg = await resetQueueChannel(client, { clearMemory: false });
-    console.log('✅ Queue message reset complete:', queueMsg?.id);
-
+    console.log('🔹 Queue message ready:', queueMsg?.id || 'No message returned');
   } catch (err) {
-    console.error('❌ Error in ready event:', err);
+    console.error('❌ Error during queue initialization:', err);
+  } finally {
+    clearTimeout(timeout);
   }
 });
+
 
 
 

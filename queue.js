@@ -427,20 +427,27 @@ async function initializeQueue(client) {
 }
 
 // ----------------- Reset -----------------
+// ----------------- Reset / Initialize Queue Channel -----------------
 async function resetQueueChannel(client, options = { clearMemory: true }) {
   try {
     console.log('🔹 Resetting queue channel...');
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     console.log('🔹 Channel fetched:', channel.name);
 
+    // Fetch existing messages
     const messages = await channel.messages.fetch({ limit: 50 });
     console.log('🔹 Messages fetched:', messages.size);
 
-    // Non-blocking deletes to avoid hanging on Discord API
-    messages.forEach(msg => {
-      msg.delete().catch(err => console.warn('⚠️ Could not delete message:', err));
-    });
+    // Delete old messages
+    for (const msg of messages.values()) {
+      try { 
+        await msg.delete(); 
+      } catch (err) { 
+        console.error('❌ Error deleting message:', err); 
+      }
+    }
 
+    // Clear in-memory queue if requested
     if (options.clearMemory) {
       queue.forEach(u => {
         delete u.pendingPairId;
@@ -450,18 +457,15 @@ async function resetQueueChannel(client, options = { clearMemory: true }) {
       console.log('🔹 In-memory queue cleared');
     }
 
-    // Safe send/update queue
-    try {
-      await sendOrUpdateQueueMessage(client);
-    } catch (err) {
-      console.error('❌ Failed to send/update queue message:', err);
-    }
-
+    // Send / update queue message and return it
+    const queueMsg = await sendOrUpdateQueueMessage(client);
     console.log('✅ Queue channel reset; old messages removed');
+    return queueMsg;
+
   } catch (err) {
     console.error('❌ Error resetting queue channel:', err);
+    return null;
   }
 }
-
 
 export { queue, sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel, processPendingMatchups, initializeQueue };
