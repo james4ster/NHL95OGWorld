@@ -199,10 +199,15 @@ client.on('messageCreate', async (message) => {
 
 
 
-
-
 // === Discord Login + Queue Initialization ===
 (async () => {
+  if (!process.env.DISCORD_TOKEN) {
+    console.error('❌ DISCORD_TOKEN is missing! Bot cannot log in.');
+    return;
+  } else {
+    console.log('✅ DISCORD_TOKEN is set, attempting login...');
+  }
+
   try {
     await client.login(process.env.DISCORD_TOKEN);
     console.log(`✅ Logged in as ${client.user.tag}`);
