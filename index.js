@@ -26,7 +26,7 @@ import fs from "node:fs/promises";
 
 // === Config Variables ===
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
-const STATE_UPLOAD_CHANNEL_ID = process.env.STATE_UPLOAD_CHANNEL_ID;
+const STATE_UPLOAD_CHANNEL_ID = process.env.SAVE_STATE_CHANNEL_ID;
 
 
 // === Discord Client Setup ===
