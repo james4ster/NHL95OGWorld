@@ -25,8 +25,8 @@ import { google } from 'googleapis';
 import fetch from 'node-fetch';
 import { sendOrUpdateQueueMessage, handleInteraction, initializeQueue } from './queue.js';
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
-// import readOgRomBinaryGameState from "./gameStateParsing/game-state/read-og-rom-game-state.js";
-// import fs from "node:fs/promises";
+//import readOgRomBinaryGameState from "./gameStateParsing/game-state/read-og-rom-game-state.js";
+//import fs from "node:fs/promises";
 
 // === Config Variables ===
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
@@ -149,6 +149,18 @@ client.on('interactionCreate', async (interaction) => {
   await handleInteraction(interaction, client);
 });
 
+// === Debug Events ===
+client.on('debug', (info) => {
+  // Log key connection events
+  if (info.includes('Session') || info.includes('Ready') || info.includes('Heartbeat')) {
+    console.log('🔹 Discord Debug:', info);
+  }
+});
+
+client.on('shardReady', (shardId) => {
+  console.log(`✅ Shard ${shardId} is ready`);
+});
+
 // === Ready Event ===
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
@@ -174,14 +186,20 @@ async function startDiscord() {
     console.log('🔹 Attempting Discord login...');
     console.log('🔹 Token present:', process.env.DISCORD_TOKEN ? 'Yes (length: ' + process.env.DISCORD_TOKEN.length + ')' : 'No');
 
+    // Set a timeout to see if login hangs
+    const loginTimeout = setTimeout(() => {
+      console.warn('⚠️ Login taking longer than expected (30s)...');
+    }, 30000);
+
     await client.login(process.env.DISCORD_TOKEN);
+    clearTimeout(loginTimeout);
     console.log('🔹 Login promise resolved, waiting for ready event...');
+
   } catch (err) {
     console.error('❌ Discord login failed:');
     console.error('Error name:', err.name);
     console.error('Error message:', err.message);
     console.error('Full error:', err);
-    process.exit(1);
   }
 }
 
