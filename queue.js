@@ -429,11 +429,19 @@ async function initializeQueue(client) {
 // ----------------- Reset -----------------
 async function resetQueueChannel(client, options = { clearMemory: true }) {
   try {
+    console.log('🔹 Resetting queue channel...');
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+    console.log('🔹 Channel fetched:', channel.name);
+
     const messages = await channel.messages.fetch({ limit: 50 });
+    console.log('🔹 Messages fetched:', messages.size);
 
     for (const msg of messages.values()) {
-      try { await msg.delete(); } catch {}
+      try { 
+        await msg.delete(); 
+      } catch (err) { 
+        console.error('❌ Error deleting message:', err); 
+      }
     }
 
     if (options.clearMemory) {
@@ -442,13 +450,15 @@ async function resetQueueChannel(client, options = { clearMemory: true }) {
         delete u.matchupMessage;
       });
       queue.length = 0;
+      console.log('🔹 In-memory queue cleared');
     }
 
     await sendOrUpdateQueueMessage(client);
-    console.log('🧹 Queue channel reset; old messages removed');
+    console.log('✅ Queue channel reset; old messages removed');
   } catch (err) {
     console.error('❌ Error resetting queue channel:', err);
   }
 }
+
 
 export { queue, sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel, processPendingMatchups, initializeQueue };
