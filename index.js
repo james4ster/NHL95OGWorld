@@ -161,6 +161,17 @@ client.on('shardReady', (shardId) => {
   console.log(`✅ Shard ${shardId} is ready`);
 });
 
+// === WebSocket Error Handlers  ===
+client.on('error', (err) => {
+  console.error('❌ Discord WebSocket error:', err);
+});
+
+client.on('shardError', (err) => {
+  console.error('❌ Discord Shard error:', err);
+});
+
+
+
 // === Ready Event ===
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
