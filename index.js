@@ -163,6 +163,7 @@ client.on('interactionCreate', async (interaction) => {
 // === Ready Event (v14) ===
 client.once('ready', async () => {
   console.log('🟢 Bot is online');
+  console.log('🔹 QUEUE_CHANNEL_ID inside ready:', QUEUE_CHANNEL_ID);
   try {
     console.log('Fetching queue channel...');
     const queueMsg = await resetQueueChannel(client, { clearMemory: false });
@@ -173,4 +174,5 @@ client.once('ready', async () => {
     console.error('❌ Error during ready queue flush:', err);
   }
 });
+
 
