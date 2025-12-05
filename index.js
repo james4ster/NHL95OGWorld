@@ -145,19 +145,24 @@ client.on('interactionCreate', async (interaction) => {
 
 // === Discord Login + Queue Initialization ===
 (async () => {
-  if (!process.env.DISCORD_TOKEN) {
+  const token = process.env.DISCORD_TOKEN;
+  if (!token) {
     console.error('❌ DISCORD_TOKEN is missing! Bot cannot log in.');
     return;
+  } else {
+    console.log('✅ DISCORD_TOKEN is set, attempting login...');
   }
 
   try {
-    console.log('🔹 Attempting Discord login...');
-    await client.login(process.env.DISCORD_TOKEN);
+    console.log('🔹 client.login() called...');
+    await client.login(token);
     console.log(`✅ Logged in as ${client.user.tag}`);
   } catch (err) {
     console.error('❌ Discord login failed:', err);
+    if (err.stack) console.error(err.stack);
   }
 })();
+
 
 // === Ready Event: flush old queue messages ===
   client.once('ready', async () => {
