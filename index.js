@@ -146,12 +146,11 @@ client.on('interactionCreate', async (interaction) => {
 // === Discord Login + Queue Initialization ===
 (async () => {
   if (!process.env.DISCORD_TOKEN) {
-    console.error('❌ DISCORD_TOKEN is missing!');
+    console.error('❌ DISCORD_TOKEN missing');
     return;
   }
-
   try {
-    console.log('🔹 Attempting Discord login...');
+    console.log('🔹 Logging in...');
     await client.login(process.env.DISCORD_TOKEN);
     console.log(`✅ Logged in as ${client.user.tag}`);
   } catch (err) {
@@ -159,22 +158,18 @@ client.on('interactionCreate', async (interaction) => {
   }
 })();
 
-
-
-// === Ready Event: flush old queue messages ===
+// v14 syntax
 client.once('ready', async () => {
-  console.log('🧹 Startup flush: clearing old messages in queue channel');
-
+  console.log('🟢 Bot is online');
   try {
     console.log('Fetching queue channel...');
     const queueMsg = await resetQueueChannel(client, { clearMemory: false });
     console.log('Sending/Updating queue message...');
-    if (!queueMsg) {
-      console.warn('⚠️ Queue message not found or failed to send');
-    } else {
-      console.log('✅ Queue message ready:', queueMsg.id);
-    }
+    if (!queueMsg) console.warn('⚠️ Queue message not found or failed to send');
+    else console.log('✅ Queue message ready:', queueMsg.id);
   } catch (err) {
     console.error('❌ Error during ready queue flush:', err);
   }
 });
+
+
