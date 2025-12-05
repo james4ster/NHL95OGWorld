@@ -138,6 +138,12 @@ const app = express();
 app.use(express.json());
 app.get('/', (req, res) => res.send('🟢 NHL95OGBot is alive and ready!'));
 
+// Start Express server IMMEDIATELY for Render
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`🌐 Web server running on port ${PORT}`);
+});
+
 // === Interaction Handler ===
 client.on('interactionCreate', async (interaction) => {
   await handleInteraction(interaction, client);
@@ -157,28 +163,19 @@ client.once('ready', async () => {
   }
 });
 
-// === Main Startup Function ===
-async function startBot() {
-  // Check for required environment variables
+// === Discord Login ===
+async function startDiscord() {
   if (!process.env.DISCORD_TOKEN) {
     console.error('❌ DISCORD_TOKEN missing');
     process.exit(1);
   }
 
   try {
-    // Start Discord bot first
     console.log('🔹 Attempting Discord login...');
     console.log('🔹 Token present:', process.env.DISCORD_TOKEN ? 'Yes (length: ' + process.env.DISCORD_TOKEN.length + ')' : 'No');
 
     await client.login(process.env.DISCORD_TOKEN);
     console.log('🔹 Login promise resolved, waiting for ready event...');
-
-    // Start Express server after Discord login succeeds
-    const PORT = process.env.PORT || 10000;
-    app.listen(PORT, () => {
-      console.log(`🌐 Web server running on port ${PORT}`);
-    });
-
   } catch (err) {
     console.error('❌ Discord login failed:');
     console.error('Error name:', err.name);
@@ -188,5 +185,5 @@ async function startBot() {
   }
 }
 
-// Start the bot
-startBot();
+// Start Discord bot (async, won't block Express server)
+startDiscord();
