@@ -160,12 +160,16 @@ client.on('interactionCreate', async (interaction) => {
 })();
 
 // === Ready Event: flush old queue messages ===
-client.once('ready', async () => {
-  try {
+  client.once('ready', async () => {
     console.log('🧹 Startup flush: clearing old messages in queue channel');
-    await resetQueueChannel(client, { clearMemory: false });
-    console.log('✅ Queue channel flushed, in-memory queue preserved');
-  } catch (err) {
-    console.error('❌ Error during ready queue flush:', err);
-  }
-});
+    try {
+      const queueMsg = await resetQueueChannel(client, { clearMemory: false });
+      if (!queueMsg) {
+        console.warn('⚠️ Queue message not found or failed to send');
+      } else {
+        console.log('✅ Queue message ready:', queueMsg.id);
+      }
+    } catch (err) {
+      console.error('❌ Error during ready queue flush:', err);
+    }
+  });
