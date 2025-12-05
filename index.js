@@ -162,17 +162,23 @@ client.on('interactionCreate', async (interaction) => {
 
 // === Ready Event (v14) ===
 client.once('ready', async () => {
-  console.log('🟢 Bot is online');
-  console.log('🔹 QUEUE_CHANNEL_ID inside ready:', QUEUE_CHANNEL_ID);
+  console.log('🟢 Bot ready event fired');
+
   try {
-    console.log('Fetching queue channel...');
+    console.log('🔹 QUEUE_CHANNEL_ID:', QUEUE_CHANNEL_ID);
+    const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+    console.log('🔹 Queue channel fetched:', channel.name);
+
+    const messages = await channel.messages.fetch({ limit: 5 });
+    console.log('🔹 Messages fetched:', messages.size);
+
     const queueMsg = await resetQueueChannel(client, { clearMemory: false });
-    console.log('Sending/Updating queue message...');
-    if (!queueMsg) console.warn('⚠️ Queue message not found or failed to send');
-    else console.log('✅ Queue message ready:', queueMsg.id);
+    console.log('✅ Queue message reset complete:', queueMsg?.id);
+
   } catch (err) {
-    console.error('❌ Error during ready queue flush:', err);
+    console.error('❌ Error in ready event:', err);
   }
 });
+
 
 
