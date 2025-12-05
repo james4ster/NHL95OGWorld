@@ -208,13 +208,17 @@ client.on('messageCreate', async (message) => {
     console.log('✅ DISCORD_TOKEN is set, attempting login...');
   }
 
-  try {
-    await client.login(process.env.DISCORD_TOKEN);
-    console.log(`✅ Logged in as ${client.user.tag}`);
-  } catch (err) {
-    console.error('❌ Discord login failed:', err);
-    console.error(err.stack);
-  }
+  (async () => {
+    console.log('🔹 Attempting Discord login...');
+    try {
+      await client.login(process.env.DISCORD_TOKEN);
+      console.log(`✅ Logged in as ${client.user.tag}`);
+    } catch (err) {
+      console.error('❌ Discord login failed:', err);
+    }
+    console.log('🔹 client.login() finished');
+  })();
+
 })();
 
 // === Ready Event: flush old queue messages ===
