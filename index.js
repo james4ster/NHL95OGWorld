@@ -9,25 +9,28 @@ Main bot file for NHL95OGBot
 
 console.log('📄 SPREADSHEET_ID env var:', process.env.SPREADSHEET_ID);
 
+// === Global Debugging ===
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err);
+});
+
 // === Imports ===
 import { Client, GatewayIntentBits } from 'discord.js';
 import express from 'express';
 import { handleGuildMemberAdd } from './welcome.js';
 import { google } from 'googleapis';
-
-// Persistent queue
+import fetch from 'node-fetch'; // only if not global
 import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel } from './queue.js';
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
-
-// Game state parsing
-import readOgRomBinaryGameState from "./gameStateParsing/game-state/read-og-rom-game-state.js"
+import readOgRomBinaryGameState from "./gameStateParsing/game-state/read-og-rom-game-state.js";
 import fs from "node:fs/promises";
-
 
 // === Config Variables ===
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
 const STATE_UPLOAD_CHANNEL_ID = process.env.SAVE_STATE_CHANNEL_ID;
-
 
 // === Discord Client Setup ===
 const client = new Client({
@@ -45,12 +48,7 @@ handleGuildMemberAdd(client);
 // === Google Sheets Helper: Add player to PlayerMaster ===
 async function writePlayerToSheet(discordId, username, displayName, joinDate) {
   const raw = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-
-  const credentials = {
-    ...raw,
-    private_key: raw.private_key.replace(/\\n/g, '\n'),
-  };
-  
+  const credentials = { ...raw, private_key: raw.private_key.replace(/\\n/g, '\n') };
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
@@ -79,19 +77,13 @@ client.on('guildMemberAdd', async (member) => {
 
   try {
     const raw = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-
-    const credentials = {
-      ...raw,
-      private_key: raw.private_key.replace(/\\n/g, '\n'),
-    };
-
+    const credentials = { ...raw, private_key: raw.private_key.replace(/\\n/g, '\n') };
     const auth = new google.auth.GoogleAuth({
       credentials,
       scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // Check if player already exists
     const playerRes = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SPREADSHEET_ID,
       range: 'PlayerMaster!A:A',
@@ -99,7 +91,6 @@ client.on('guildMemberAdd', async (member) => {
     const existingIds = playerRes.data.values ? playerRes.data.values.flat() : [];
 
     if (!existingIds.includes(discordId)) {
-      // Add to PlayerMaster
       await sheets.spreadsheets.values.append({
         spreadsheetId: process.env.SPREADSHEET_ID,
         range: 'PlayerMaster!A:E',
@@ -109,7 +100,6 @@ client.on('guildMemberAdd', async (member) => {
       });
       console.log(`✅ Added ${username} to PlayerMaster`);
 
-      // Set default ELO in RawStandings if empty
       const rawRes = await sheets.spreadsheets.values.get({
         spreadsheetId: process.env.SPREADSHEET_ID,
         range: 'RawStandings!A:AO',
@@ -150,86 +140,30 @@ client.on('interactionCreate', async (interaction) => {
   await handleInteraction(interaction, client);
 });
 
-
-// === Game State Upload Handler ===
-/*client.on('messageCreate', async (message) => {
-  try {
-    // Ignore bot messages
-    if (message.author.bot) return;
-
-    // Only process files dropped into the save-state channel
-    if (message.channel.id !== SAVE_STATE_CHANNEL_ID) return;
-
-    // No attachments? Ignore.
-    if (message.attachments.size === 0) return;
-
-    // Find any .state attachment
-    const stateAttachment = [...message.attachments.values()]
-      .find(att => att.name && att.name.endsWith('.state'));
-
-    if (!stateAttachment) return; // other file type, ignore
-
-    console.log(`📥 Detected .state upload: ${stateAttachment.name}`);
-
-    // Download file into memory
-    const response = await fetch(stateAttachment.url);
-    const arrayBuffer = await response.arrayBuffer();
-    const nodeBuffer = Buffer.from(arrayBuffer);
-
-    // Convert to simple ArrayBuffer for parser
-    const gameFileBuffer = nodeBuffer.buffer.slice(
-      nodeBuffer.byteOffset,
-      nodeBuffer.byteOffset + nodeBuffer.byteLength
-    );
-
-    // Parse game state
-    const gameData = await readOgRomBinaryGameState(gameFileBuffer);
-
-    console.log("📊 Parsed Game Data:", gameData.data);
-
-    // TODO: hook your sheets logic here
-    // await writeGameToSheets(gameData.data);
-
-    await message.reply("✅ Save state processed!");
-
-  } catch (err) {
-    console.error("❌ Error processing .state file:", err);
-    await message.reply("❌ Could not process this save file — check logs.");
-  }
-});
-*/
-
+// === Game State Upload Handler (commented out) ===
+/* Your existing messageCreate code here is fine; keep commented if needed */
 
 // === Discord Login + Queue Initialization ===
 (async () => {
   if (!process.env.DISCORD_TOKEN) {
     console.error('❌ DISCORD_TOKEN is missing! Bot cannot log in.');
     return;
-  } else {
-    console.log('✅ DISCORD_TOKEN is set, attempting login...');
   }
 
-  (async () => {
+  try {
     console.log('🔹 Attempting Discord login...');
-    try {
-      await client.login(process.env.DISCORD_TOKEN);
-      console.log(`✅ Logged in as ${client.user.tag}`);
-    } catch (err) {
-      console.error('❌ Discord login failed:', err);
-    }
-    console.log('🔹 client.login() finished');
-  })();
-
+    await client.login(process.env.DISCORD_TOKEN);
+    console.log(`✅ Logged in as ${client.user.tag}`);
+  } catch (err) {
+    console.error('❌ Discord login failed:', err);
+  }
 })();
 
 // === Ready Event: flush old queue messages ===
 client.once('ready', async () => {
   try {
     console.log('🧹 Startup flush: clearing old messages in queue channel');
-
-    // Only delete messages in the channel, do NOT touch in-memory queue
     await resetQueueChannel(client, { clearMemory: false });
-
     console.log('✅ Queue channel flushed, in-memory queue preserved');
   } catch (err) {
     console.error('❌ Error during ready queue flush:', err);
