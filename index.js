@@ -19,8 +19,15 @@ import { google } from 'googleapis';
 import { sendOrUpdateQueueMessage, handleInteraction, resetQueueChannel } from './queue.js';
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
 
+// Game state parsing
+import readOgRomBinaryGameState from "./gameStateParsing/game-state/read-og-rom-game-state.js"
+import fs from "node:fs/promises";
+
+
 // === Config Variables ===
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
+const STATE_UPLOAD_CHANNEL_ID = process.env.STATE_UPLOAD_CHANNEL_ID;
+
 
 // === Discord Client Setup ===
 const client = new Client({
@@ -37,7 +44,13 @@ handleGuildMemberAdd(client);
 
 // === Google Sheets Helper: Add player to PlayerMaster ===
 async function writePlayerToSheet(discordId, username, displayName, joinDate) {
-  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  const raw = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+
+  const credentials = {
+    ...raw,
+    private_key: raw.private_key.replace(/\\n/g, '\n'),
+  };
+  
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
@@ -65,7 +78,13 @@ client.on('guildMemberAdd', async (member) => {
   const joinDate = new Date().toLocaleString();
 
   try {
-    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    const raw = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+
+    const credentials = {
+      ...raw,
+      private_key: raw.private_key.replace(/\\n/g, '\n'),
+    };
+
     const auth = new google.auth.GoogleAuth({
       credentials,
       scopes: ['https://www.googleapis.com/auth/spreadsheets'],
@@ -130,6 +149,57 @@ app.listen(PORT, () => console.log(`🌐 Web server running on port ${PORT}`));
 client.on('interactionCreate', async (interaction) => {
   await handleInteraction(interaction, client);
 });
+
+// === Game State Upload Handler ===
+client.on('messageCreate', async (message) => {
+  try {
+    // Ignore bot messages
+    if (message.author.bot) return;
+
+    // Only process files dropped into the save-state channel
+    if (message.channel.id !== SAVE_STATE_CHANNEL_ID) return;
+
+    // No attachments? Ignore.
+    if (message.attachments.size === 0) return;
+
+    // Find any .state attachment
+    const stateAttachment = [...message.attachments.values()]
+      .find(att => att.name && att.name.endsWith('.state'));
+
+    if (!stateAttachment) return; // other file type, ignore
+
+    console.log(`📥 Detected .state upload: ${stateAttachment.name}`);
+
+    // Download file into memory
+    const response = await fetch(stateAttachment.url);
+    const arrayBuffer = await response.arrayBuffer();
+    const nodeBuffer = Buffer.from(arrayBuffer);
+
+    // Convert to simple ArrayBuffer for parser
+    const gameFileBuffer = nodeBuffer.buffer.slice(
+      nodeBuffer.byteOffset,
+      nodeBuffer.byteOffset + nodeBuffer.byteLength
+    );
+
+    // Parse game state
+    const gameData = await readOgRomBinaryGameState(gameFileBuffer);
+
+    console.log("📊 Parsed Game Data:", gameData.data);
+
+    // TODO: hook your sheets logic here
+    // await writeGameToSheets(gameData.data);
+
+    await message.reply("✅ Save state processed!");
+
+  } catch (err) {
+    console.error("❌ Error processing .state file:", err);
+    await message.reply("❌ Could not process this save file — check logs.");
+  }
+});
+
+
+
+
 
 // === Discord Login + Queue Initialization ===
 (async () => {

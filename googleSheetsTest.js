@@ -1,7 +1,13 @@
 import { google } from "googleapis";
 
 // Parse the service account JSON from env variable
-const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+const raw = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+
+const credentials = {
+  ...raw,
+  private_key: raw.private_key.replace(/\\n/g, '\n'),
+};
+
 
 // Google Auth using the JSON object
 const auth = new google.auth.GoogleAuth({

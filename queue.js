@@ -125,7 +125,13 @@ async function sendOrUpdateQueueMessage(client) {
 
 // ----------------- Google Sheets Helper -----------------
 async function fetchPlayerData(discordId) {
-  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  const raw = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+
+  const credentials = {
+    ...raw,
+    private_key: raw.private_key.replace(/\\n/g, '\n'),
+  };
+
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
