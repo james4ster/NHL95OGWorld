@@ -125,13 +125,7 @@ async function sendOrUpdateQueueMessage(client) {
 
 // ----------------- Google Sheets Helper -----------------
 async function fetchPlayerData(discordId) {
-  const raw = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-
-  const credentials = {
-    ...raw,
-    private_key: raw.private_key.replace(/\\n/g, '\n'),
-  };
-
+  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
@@ -325,6 +319,14 @@ async function handleInteraction(interaction, client) {
       if (interaction.customId.startsWith('ack_play_')) {
         player.acknowledged = true;
 
+        // Cancel timeout since player acknowledged
+        if (player.timeoutId) {
+          clearTimeout(player.timeoutId);
+        }
+        if (partner && partner.timeoutId) {
+          clearTimeout(partner.timeoutId);
+        }
+
         // Disable both buttons on this message
         const disabledRow = new ActionRowBuilder().addComponents(
           interaction.message.components[0].components.map(btn =>
@@ -337,14 +339,6 @@ async function handleInteraction(interaction, client) {
 
         // If partner has also acknowledged, finalize matchup
         if (partner && partner.acknowledged) {
-          // Cancel timeout only when BOTH players have acknowledged
-          if (player.timeoutId) {
-            clearTimeout(player.timeoutId);
-          }
-          if (partner.timeoutId) {
-            clearTimeout(partner.timeoutId);
-          }
-
           // Delete matchup messages
           if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
           if (partner.matchupMessage) try { await partner.matchupMessage.delete(); } catch {}
@@ -427,44 +421,27 @@ async function initializeQueue(client) {
 }
 
 // ----------------- Reset -----------------
-// ----------------- Reset / Initialize Queue Channel -----------------
 async function resetQueueChannel(client, options = { clearMemory: true }) {
   try {
-    console.log('🔹 Resetting queue channel...');
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-    console.log('🔹 Channel fetched:', channel.name);
-
-    // Fetch existing messages
     const messages = await channel.messages.fetch({ limit: 50 });
-    console.log('🔹 Messages fetched:', messages.size);
 
-    // Delete old messages
     for (const msg of messages.values()) {
-      try { 
-        await msg.delete(); 
-      } catch (err) { 
-        console.error('❌ Error deleting message:', err); 
-      }
+      try { await msg.delete(); } catch {}
     }
 
-    // Clear in-memory queue if requested
     if (options.clearMemory) {
       queue.forEach(u => {
         delete u.pendingPairId;
         delete u.matchupMessage;
       });
       queue.length = 0;
-      console.log('🔹 In-memory queue cleared');
     }
 
-    // Send / update queue message and return it
-    const queueMsg = await sendOrUpdateQueueMessage(client);
-    console.log('✅ Queue channel reset; old messages removed');
-    return queueMsg;
-
+    await sendOrUpdateQueueMessage(client);
+    console.log('🧹 Queue channel reset; old messages removed');
   } catch (err) {
     console.error('❌ Error resetting queue channel:', err);
-    return null;
   }
 }
 
