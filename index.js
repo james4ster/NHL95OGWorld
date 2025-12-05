@@ -150,8 +150,9 @@ client.on('interactionCreate', async (interaction) => {
   await handleInteraction(interaction, client);
 });
 
+
 // === Game State Upload Handler ===
-client.on('messageCreate', async (message) => {
+/*client.on('messageCreate', async (message) => {
   try {
     // Ignore bot messages
     if (message.author.bot) return;
@@ -196,7 +197,7 @@ client.on('messageCreate', async (message) => {
     await message.reply("❌ Could not process this save file — check logs.");
   }
 });
-
+*/
 
 
 // === Discord Login + Queue Initialization ===
