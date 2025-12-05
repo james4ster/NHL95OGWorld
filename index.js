@@ -165,21 +165,6 @@ if (!process.env.DISCORD_TOKEN) {
   process.exit(1);
 }
 
-// Add debug event listeners
-client.on('debug', info => {
-  if (info.includes('Preparing to connect') || info.includes('Session') || info.includes('Ready')) {
-    console.log('🔹 Discord Debug:', info);
-  }
-});
-
-client.on('error', error => {
-  console.error('❌ Discord Client Error:', error);
-});
-
-client.on('warn', warning => {
-  console.warn('⚠️ Discord Warning:', warning);
-});
-
 console.log('🔹 Attempting Discord login...');
 console.log('🔹 Token present:', process.env.DISCORD_TOKEN ? 'Yes (length: ' + process.env.DISCORD_TOKEN.length + ')' : 'No');
 
