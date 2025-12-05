@@ -165,12 +165,32 @@ if (!process.env.DISCORD_TOKEN) {
   process.exit(1);
 }
 
+// Add debug event listeners
+client.on('debug', info => {
+  if (info.includes('Preparing to connect') || info.includes('Session') || info.includes('Ready')) {
+    console.log('🔹 Discord Debug:', info);
+  }
+});
+
+client.on('error', error => {
+  console.error('❌ Discord Client Error:', error);
+});
+
+client.on('warn', warning => {
+  console.warn('⚠️ Discord Warning:', warning);
+});
+
 console.log('🔹 Attempting Discord login...');
+console.log('🔹 Token present:', process.env.DISCORD_TOKEN ? 'Yes (length: ' + process.env.DISCORD_TOKEN.length + ')' : 'No');
+
 client.login(process.env.DISCORD_TOKEN)
   .then(() => {
-    console.log('🔹 Login request sent, waiting for ready event...');
+    console.log('🔹 Login promise resolved, waiting for ready event...');
   })
   .catch(err => {
-    console.error('❌ Discord login failed:', err);
+    console.error('❌ Discord login failed:');
+    console.error('Error name:', err.name);
+    console.error('Error message:', err.message);
+    console.error('Full error:', err);
     process.exit(1);
   });
