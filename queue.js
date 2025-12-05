@@ -436,13 +436,10 @@ async function resetQueueChannel(client, options = { clearMemory: true }) {
     const messages = await channel.messages.fetch({ limit: 50 });
     console.log('🔹 Messages fetched:', messages.size);
 
-    for (const msg of messages.values()) {
-      try { 
-        await msg.delete(); 
-      } catch (err) { 
-        console.error('❌ Error deleting message:', err); 
-      }
-    }
+    // Non-blocking deletes to avoid hanging on Discord API
+    messages.forEach(msg => {
+      msg.delete().catch(err => console.warn('⚠️ Could not delete message:', err));
+    });
 
     if (options.clearMemory) {
       queue.forEach(u => {
@@ -453,7 +450,13 @@ async function resetQueueChannel(client, options = { clearMemory: true }) {
       console.log('🔹 In-memory queue cleared');
     }
 
-    await sendOrUpdateQueueMessage(client);
+    // Safe send/update queue
+    try {
+      await sendOrUpdateQueueMessage(client);
+    } catch (err) {
+      console.error('❌ Failed to send/update queue message:', err);
+    }
+
     console.log('✅ Queue channel reset; old messages removed');
   } catch (err) {
     console.error('❌ Error resetting queue channel:', err);
