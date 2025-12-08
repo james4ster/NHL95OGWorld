@@ -136,7 +136,7 @@ client.on('guildMemberAdd', async (member) => {
 // === Express Server for Render Health Check ===
 const app = express();
 app.use(express.json());
-app.get('/', (req, res) => res.send('🟢 NHL95OGBot is alive and ready!'));
+app.get('/', (req, res) => res.send('🟢 NHL95Bot is alive and ready!'));
 
 // Start Express server IMMEDIATELY for Render
 const PORT = process.env.PORT || 10000;
