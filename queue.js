@@ -49,22 +49,17 @@ async function buildQueueEmbed() {
       .setTimestamp();
   }
 
-  // List of players not yet in a pending matchup
   const soloPlayers = queue.filter(u => !u.pendingPairId);
-
-  // Players in pending matchups
   const pendingPlayers = queue.filter(u => u.pendingPairId);
 
   let description = '';
 
-  // Solo players — no emoji
   if (soloPlayers.length) {
     description += soloPlayers
       .map((u, i) => `${i + 1}. ${u.name} [${u.elo}]`)
       .join('\n');
   }
 
-  // Pending matches
   if (pendingPlayers.length) {
     const seen = new Set();
     for (const p of pendingPlayers) {
@@ -92,51 +87,57 @@ async function buildQueueEmbed() {
   return embed;
 }
 
-// ----------------- Safe queue message send/edit -----------------
+// ----------------- Mutex for safe queue message updates -----------------
+let queueUpdateLock = Promise.resolve();
+
 async function sendOrUpdateQueueMessage(client) {
-  try {
-    console.log('🔹 sendOrUpdateQueueMessage called');
-    const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-    console.log('🔹 Channel fetched in sendOrUpdate');
+  queueUpdateLock = queueUpdateLock.then(async () => {
+    try {
+      console.log('🔹 sendOrUpdateQueueMessage called');
+      const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+      console.log('🔹 Channel fetched in sendOrUpdate');
 
-    const embed = await buildQueueEmbed();
-    console.log('🔹 Queue embed built');
+      const embed = await buildQueueEmbed();
+      console.log('🔹 Queue embed built');
 
-    let existing = null;
-    if (client.queueMessageId) {
-      console.log('🔹 Checking for existing queue message:', client.queueMessageId);
-      try {
-        existing = await channel.messages.fetch(client.queueMessageId);
-        console.log('🔹 Found existing message');
-      } catch {
-        console.log('🔹 Existing message not found');
+      let existing = null;
+      if (client.queueMessageId) {
+        console.log('🔹 Checking for existing queue message:', client.queueMessageId);
+        try {
+          existing = await channel.messages.fetch(client.queueMessageId);
+          console.log('🔹 Found existing message');
+        } catch {
+          console.log('🔹 Existing message not found');
+        }
       }
-    }
 
-    if (existing) {
-      console.log('🔹 Editing existing message');
-      await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
-      console.log('✅ Message edited');
-    } else {
-      console.log('🔹 Searching for queue message in recent messages');
-      const messages = await channel.messages.fetch({ limit: 10 });
-      existing = messages.find(m => m.content === '**NHL \'95 Game Queue**');
       if (existing) {
-        console.log('🔹 Found existing queue message, updating ID');
-        client.queueMessageId = existing.id;
+        console.log('🔹 Editing existing message');
         await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
         console.log('✅ Message edited');
       } else {
-        console.log('🔹 Creating new queue message');
-        const newMsg = await channel.send({ content: '**NHL \'95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
-        client.queueMessageId = newMsg.id;
-        console.log('✅ New message created:', newMsg.id);
+        console.log('🔹 Searching for queue message in recent messages');
+        const messages = await channel.messages.fetch({ limit: 10 });
+        existing = messages.find(m => m.content === '**NHL \'95 Game Queue**');
+        if (existing) {
+          console.log('🔹 Found existing queue message, updating ID');
+          client.queueMessageId = existing.id;
+          await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
+          console.log('✅ Message edited');
+        } else {
+          console.log('🔹 Creating new queue message');
+          const newMsg = await channel.send({ content: '**NHL \'95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
+          client.queueMessageId = newMsg.id;
+          console.log('✅ New message created:', newMsg.id);
+        }
       }
+    } catch (err) {
+      console.error('❌ Failed to send/update queue message:', err);
+      console.error('Error stack:', err.stack);
     }
-  } catch (err) {
-    console.error('❌ Failed to send/update queue message:', err);
-    console.error('Error stack:', err.stack);
-  }
+  });
+
+  return queueUpdateLock;
 }
 
 // ----------------- Google Sheets Helper -----------------
@@ -174,7 +175,6 @@ async function processPendingMatchups(client) {
   processingMatchups = true;
 
   try {
-    // Only consider players that are waiting and not already paired
     const waitingPlayers = queue.filter(u => u.status === 'waiting' && !u.pendingPairId && !u.matchupMessage);
 
     if (waitingPlayers.length < 2) return;
@@ -187,16 +187,13 @@ async function processPendingMatchups(client) {
       const p1 = waitingPlayers[i];
       const p2 = waitingPlayers[i + 1];
 
-      // Double-check neither player has been paired since filtering
       if (p1.pendingPairId || p2.pendingPairId || p1.matchupMessage || p2.matchupMessage) continue;
 
-      // Mark them as pending BEFORE sending messages to prevent race conditions
       p1.status = 'pending';
       p2.status = 'pending';
       p1.pendingPairId = p2.id;
       p2.pendingPairId = p1.id;
 
-      // Randomize teams
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
       let awayTeam = teams[Math.floor(Math.random() * teams.length)];
       while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
@@ -206,43 +203,28 @@ async function processPendingMatchups(client) {
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
-      // Send matchup messages
       const awayContent =
         `🎮 Matchup Pending Acknowledgment\nEach player, please acknowledge using the buttons below.\n\n` +
         `🚌 Away\n<@${p2.id}> ${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}`;
-
       const awayRow = buildAckButtons(p2.id, nhlEmojiMap[p2.awayTeam]);
       p2.matchupMessage = await channel.send({ content: awayContent, components: [awayRow] });
 
       const homeContent =
         `──────────────────────────\n\n` +
         `🏠 Home\n<@${p1.id}> ${p1.name} [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}`;
-
       const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
       p1.matchupMessage = await channel.send({ content: homeContent, components: [homeRow] });
 
-      // Set up timeout for this matchup
       const timeoutId = setTimeout(async () => {
         try {
-          // Check if players are still in pending state (not yet acknowledged or completed)
           const player1 = queue.find(u => u.id === p1.id);
           const player2 = queue.find(u => u.id === p2.id);
 
           if (player1 && player2 && player1.pendingPairId === p2.id) {
-            // Delete matchup messages
-            if (player1.matchupMessage) {
-              try { await player1.matchupMessage.delete(); } catch {}
-            }
-            if (player2.matchupMessage) {
-              try { await player2.matchupMessage.delete(); } catch {}
-            }
-
-            // Remove both players from queue
+            if (player1.matchupMessage) try { await player1.matchupMessage.delete(); } catch {}
+            if (player2.matchupMessage) try { await player2.matchupMessage.delete(); } catch {}
             queue = queue.filter(u => ![p1.id, p2.id].includes(u.id));
-
-            // Update queue window
             await sendOrUpdateQueueMessage(client);
-
             console.log(`⏰ Matchup timed out: ${p1.name} vs ${p2.name}`);
           }
         } catch (err) {
@@ -250,7 +232,6 @@ async function processPendingMatchups(client) {
         }
       }, MATCHUP_TIMEOUT_MS);
 
-      // Store timeout ID so we can cancel it if needed
       p1.timeoutId = timeoutId;
       p2.timeoutId = timeoutId;
     }
@@ -267,10 +248,7 @@ async function handleInteraction(interaction, client) {
   const userId = interaction.user.id;
 
   try {
-    // Acknowledge the interaction immediately (within 3 seconds)
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferUpdate().catch(() => {});
-    }
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
 
     // --- Queue Join ---
     if (interaction.customId === 'join_queue') {
@@ -287,18 +265,11 @@ async function handleInteraction(interaction, client) {
     if (interaction.customId === 'leave_queue') {
       const leavingPlayer = queue.find(u => u.id === userId);
       if (leavingPlayer) {
-        // Cancel timeout if exists
-        if (leavingPlayer.timeoutId) {
-          clearTimeout(leavingPlayer.timeoutId);
-        }
-
+        if (leavingPlayer.timeoutId) clearTimeout(leavingPlayer.timeoutId);
         if (leavingPlayer.matchupMessage) try { await leavingPlayer.matchupMessage.delete(); } catch {}
         const partner = queue.find(u => u.id === leavingPlayer.pendingPairId);
         if (partner && partner.matchupMessage) {
-          // Cancel partner's timeout too
-          if (partner.timeoutId) {
-            clearTimeout(partner.timeoutId);
-          }
+          if (partner.timeoutId) clearTimeout(partner.timeoutId);
           try { await partner.matchupMessage.delete(); } catch {}
           partner.status = 'waiting';
           delete partner.pendingPairId;
@@ -315,74 +286,41 @@ async function handleInteraction(interaction, client) {
     if (interaction.customId.startsWith('ack_play_') || interaction.customId.startsWith('ack_decline_')) {
       const targetPlayerId = interaction.customId.split('_')[2];
 
-      // Only allow the tagged player to click their own button
       if (userId !== targetPlayerId) {
-        await interaction.followUp({ 
-          content: '❌ This button is not for you! Only the tagged player can respond to their matchup.',
-          ephemeral: true 
-        });
+        await interaction.followUp({ content: '❌ This button is not for you! Only the tagged player can respond.', ephemeral: true });
         return;
       }
 
       const player = queue.find(u => u.id === userId);
       if (!player || !player.pendingPairId) return;
       const partner = queue.find(u => u.id === player.pendingPairId);
-
       const nhlEmojiMap = getNHLEmojiMap();
       const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
 
-      // --- Play ---
       if (interaction.customId.startsWith('ack_play_')) {
         player.acknowledged = true;
-
-        // Disable both buttons on this message
         const disabledRow = new ActionRowBuilder().addComponents(
-          interaction.message.components[0].components.map(btn =>
-            ButtonBuilder.from(btn).setDisabled(true)
-          )
+          interaction.message.components[0].components.map(btn => ButtonBuilder.from(btn).setDisabled(true))
         );
-
         await interaction.editReply({ components: [disabledRow] });
-        await sendOrUpdateQueueMessage(client); // Updates queue embed with green checkmark
+        await sendOrUpdateQueueMessage(client);
 
-        // If partner has also acknowledged, finalize matchup
         if (partner && partner.acknowledged) {
-          // Cancel timeout only when BOTH players have acknowledged
-          if (player.timeoutId) {
-            clearTimeout(player.timeoutId);
-          }
-          if (partner.timeoutId) {
-            clearTimeout(partner.timeoutId);
-          }
-
-          // Delete matchup messages
+          if (player.timeoutId) clearTimeout(player.timeoutId);
+          if (partner.timeoutId) clearTimeout(partner.timeoutId);
           if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
           if (partner.matchupMessage) try { await partner.matchupMessage.delete(); } catch {}
-
-          // Send matchup to rated-games channel
           await ratedChannel.send(
-            `🎮 Rated Game Matchup!\n` +
-            `🚌 Away: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\n` +
-            `🏠 Home: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}`
+            `🎮 Rated Game Matchup!\n🚌 Away: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\n🏠 Home: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}`
           );
-
-          // Remove both players from queue
           queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
           await sendOrUpdateQueueMessage(client);
         }
       }
 
-      // --- Don't Play ---
       if (interaction.customId.startsWith('ack_decline_')) {
-        // Cancel timeout since player declined
-        if (player.timeoutId) {
-          clearTimeout(player.timeoutId);
-        }
-        if (partner && partner.timeoutId) {
-          clearTimeout(partner.timeoutId);
-        }
-
-        // Reset partner if exists
+        if (player.timeoutId) clearTimeout(player.timeoutId);
+        if (partner && partner.timeoutId) clearTimeout(partner.timeoutId);
         if (partner && partner.matchupMessage) {
           try { await partner.matchupMessage.delete(); } catch {}
           partner.status = 'waiting';
@@ -390,13 +328,8 @@ async function handleInteraction(interaction, client) {
           delete partner.matchupMessage;
           delete partner.acknowledged;
         }
-
-        // Delete player's matchup message
         if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
-
-        // Remove player from queue
         queue = queue.filter(u => u.id !== userId);
-
         await sendOrUpdateQueueMessage(client);
         await processPendingMatchups(client);
       }
@@ -411,25 +344,15 @@ async function handleInteraction(interaction, client) {
 async function initializeQueue(client) {
   try {
     console.log('🔄 Initializing queue system...');
-
-    // Clear in-memory queue
     queue.length = 0;
 
-    // Clear the queue channel
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const messages = await channel.messages.fetch({ limit: 100 });
-
     for (const msg of messages.values()) {
-      try { 
-        await msg.delete(); 
-      } catch (err) {
-        console.error('Error deleting message:', err);
-      }
+      try { await msg.delete(); } catch {}
     }
 
-    // Send fresh queue window
     await sendOrUpdateQueueMessage(client);
-
     console.log('✅ Queue system initialized - channel cleared, empty queue window created');
   } catch (err) {
     console.error('❌ Error initializing queue:', err);
@@ -441,7 +364,6 @@ async function resetQueueChannel(client, options = { clearMemory: true }) {
   try {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const messages = await channel.messages.fetch({ limit: 50 });
-
     for (const msg of messages.values()) {
       try { await msg.delete(); } catch {}
     }
