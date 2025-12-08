@@ -150,25 +150,27 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // === Debug Events ===
-client.on('debug', (info) => {
-  // Log key connection events
-  if (info.includes('Session') || info.includes('Ready') || info.includes('Heartbeat')) {
-    console.log('🔹 Discord Debug:', info);
-  }
-});
 
-client.on('shardReady', (shardId) => {
-  console.log(`✅ Shard ${shardId} is ready`);
-});
+    // WebSocket or Discord client errors
+    client.on('error', (err) => {
+      console.error('❌ Discord client error:', err);
+    });
+    
+    // Shard-level errors (if sharding is used)
+    client.on('shardError', (err) => {
+      console.error('❌ Discord shard error:', err);
+    });
+    
+    // Catch unhandled promise rejections that could crash your bot
+    process.on('unhandledRejection', (reason) => {
+      console.error('❌ Unhandled Promise Rejection:', reason);
+    });
+    
+    // Catch errors thrown but not caught
+    process.on('uncaughtException', (err) => {
+      console.error('❌ Uncaught Exception:', err);
+    });
 
-// === WebSocket Error Handlers  ===
-client.on('error', (err) => {
-  console.error('❌ Discord WebSocket error:', err);
-});
-
-client.on('shardError', (err) => {
-  console.error('❌ Discord Shard error:', err);
-});
 
 
 
