@@ -137,3 +137,6 @@ archive/
 testCaptureUser.js
 primeEmojis.js
 queuebkp.js
+
+# google keys
+serviceKeys.json
