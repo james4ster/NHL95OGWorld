@@ -88,56 +88,55 @@ async function buildQueueEmbed() {
 }
 
 // ----------------- Mutex for safe queue message updates -----------------
-let queueUpdateLock = Promise.resolve();
+let queueUpdateInProgress = false;
 
 async function sendOrUpdateQueueMessage(client) {
-  queueUpdateLock = queueUpdateLock.then(async () => {
-    try {
-      console.log('🔹 sendOrUpdateQueueMessage called');
-      const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-      console.log('🔹 Channel fetched in sendOrUpdate');
+  if (queueUpdateInProgress) return; // skip if already updating
+  queueUpdateInProgress = true;
 
-      const embed = await buildQueueEmbed();
-      console.log('🔹 Queue embed built');
+  try {
+    console.log('🔹 sendOrUpdateQueueMessage called');
+    const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+    console.log('🔹 Channel fetched in sendOrUpdate');
 
-      let existing = null;
-      if (client.queueMessageId) {
-        console.log('🔹 Checking for existing queue message:', client.queueMessageId);
-        try {
-          existing = await channel.messages.fetch(client.queueMessageId);
-          console.log('🔹 Found existing message');
-        } catch {
-          console.log('🔹 Existing message not found');
-        }
-      }
+    const embed = await buildQueueEmbed();
+    console.log('🔹 Queue embed built');
 
+    let existing = null;
+    if (client.queueMessageId) {
+      console.log('🔹 Checking for existing queue message:', client.queueMessageId);
+      try {
+        existing = await channel.messages.fetch(client.queueMessageId);
+        console.log('🔹 Found existing message');
+      } catch {}
+    }
+
+    if (existing) {
+      console.log('🔹 Editing existing message');
+      await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
+      console.log('✅ Message edited');
+    } else {
+      console.log('🔹 Searching for queue message in recent messages');
+      const messages = await channel.messages.fetch({ limit: 10 });
+      existing = messages.find(m => m.content === '**NHL \'95 Game Queue**');
       if (existing) {
-        console.log('🔹 Editing existing message');
+        console.log('🔹 Found existing queue message, updating ID');
+        client.queueMessageId = existing.id;
         await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
         console.log('✅ Message edited');
       } else {
-        console.log('🔹 Searching for queue message in recent messages');
-        const messages = await channel.messages.fetch({ limit: 10 });
-        existing = messages.find(m => m.content === '**NHL \'95 Game Queue**');
-        if (existing) {
-          console.log('🔹 Found existing queue message, updating ID');
-          client.queueMessageId = existing.id;
-          await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
-          console.log('✅ Message edited');
-        } else {
-          console.log('🔹 Creating new queue message');
-          const newMsg = await channel.send({ content: '**NHL \'95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
-          client.queueMessageId = newMsg.id;
-          console.log('✅ New message created:', newMsg.id);
-        }
+        console.log('🔹 Creating new queue message');
+        const newMsg = await channel.send({ content: '**NHL \'95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
+        client.queueMessageId = newMsg.id;
+        console.log('✅ New message created:', newMsg.id);
       }
-    } catch (err) {
-      console.error('❌ Failed to send/update queue message:', err);
-      console.error('Error stack:', err.stack);
     }
-  });
-
-  return queueUpdateLock;
+  } catch (err) {
+    console.error('❌ Failed to send/update queue message:', err);
+    console.error('Error stack:', err.stack);
+  } finally {
+    queueUpdateInProgress = false;
+  }
 }
 
 // ----------------- Google Sheets Helper -----------------
