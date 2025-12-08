@@ -174,7 +174,6 @@ async function processPendingMatchups(client) {
   processingMatchups = true;
 
   try {
-    // Only consider players that are waiting, not already paired, and not locked
     const waitingPlayers = queue.filter(
       u => u.status === 'waiting' && !u.pendingPairId && !u.matchupMessage && !u.lockedForPairing
     );
@@ -189,20 +188,17 @@ async function processPendingMatchups(client) {
       const p1 = waitingPlayers[i];
       const p2 = waitingPlayers[i + 1];
 
-      // Skip if either player has been paired or locked since filtering
       if (p1.pendingPairId || p2.pendingPairId || p1.matchupMessage || p2.matchupMessage || p1.lockedForPairing || p2.lockedForPairing) continue;
 
-      // Mark them as locked to prevent duplicate pairing
+      // Lock players for pairing
       p1.lockedForPairing = true;
       p2.lockedForPairing = true;
 
-      // Set pending status and pair IDs
       p1.status = 'pending';
       p2.status = 'pending';
       p1.pendingPairId = p2.id;
       p2.pendingPairId = p1.id;
 
-      // Randomize teams
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
       let awayTeam = teams[Math.floor(Math.random() * teams.length)];
       while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
@@ -212,7 +208,6 @@ async function processPendingMatchups(client) {
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
-      // Send matchup messages
       const awayContent =
         `🎮 Matchup Pending Acknowledgment\nEach player, please acknowledge using the buttons below.\n\n` +
         `🚌 Away\n<@${p2.id}> ${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}`;
@@ -225,7 +220,6 @@ async function processPendingMatchups(client) {
       const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
       p1.matchupMessage = await channel.send({ content: homeContent, components: [homeRow] });
 
-      // Timeout to handle unacknowledged matchups
       const timeoutId = setTimeout(async () => {
         try {
           const player1 = queue.find(u => u.id === p1.id);
@@ -243,24 +237,22 @@ async function processPendingMatchups(client) {
         } catch (err) {
           console.error('❌ Error handling matchup timeout:', err);
         } finally {
-          // Remove pairing lock after timeout
-          delete p1.lockedForPairing;
-          delete p2.lockedForPairing;
+          // Remove locks individually
+          if (p1) delete p1.lockedForPairing;
+          if (p2) delete p2.lockedForPairing;
         }
       }, MATCHUP_TIMEOUT_MS);
 
-      // Store timeout IDs
       p1.timeoutId = timeoutId;
       p2.timeoutId = timeoutId;
     }
 
     await sendOrUpdateQueueMessage(client);
   } finally {
-    // Clear locks after processing so new matchups can form
-    waitingPlayers.forEach(p => delete p.lockedForPairing);
     processingMatchups = false;
   }
 }
+
 
 
 // ----------------- Interaction handler -----------------
