@@ -293,30 +293,49 @@ async function handleInteraction(interaction, client) {
       const player = queue.find(u => u.id === userId);
       if (!player || !player.pendingPairId) return;
       const partner = queue.find(u => u.id === player.pendingPairId);
+
       const nhlEmojiMap = getNHLEmojiMap();
       const ratedChannel = await client.channels.fetch(RATED_GAMES_CHANNEL_ID);
 
+      // --- Play ---
       if (interaction.customId.startsWith('ack_play_')) {
         player.acknowledged = true;
-        const disabledRow = new ActionRowBuilder().addComponents(
-          interaction.message.components[0].components.map(btn => ButtonBuilder.from(btn).setDisabled(true))
-        );
-        await interaction.editReply({ components: [disabledRow] });
+
+        // DISABLE buttons on matchup message directly
+        if (interaction.message) {
+          const disabledRow = new ActionRowBuilder().addComponents(
+            interaction.message.components[0].components.map(btn =>
+              ButtonBuilder.from(btn).setDisabled(true)
+            )
+          );
+          try {
+            await interaction.message.edit({ components: [disabledRow] });
+          } catch (err) {
+            console.error('❌ Failed to disable Play buttons:', err);
+          }
+        }
+
         await sendOrUpdateQueueMessage(client);
 
+        // Finalize matchup if both acknowledged
         if (partner && partner.acknowledged) {
           if (player.timeoutId) clearTimeout(player.timeoutId);
           if (partner.timeoutId) clearTimeout(partner.timeoutId);
+
           if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
           if (partner.matchupMessage) try { await partner.matchupMessage.delete(); } catch {}
+
           await ratedChannel.send(
-            `🎮 Rated Game Matchup!\n🚌 Away: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\n🏠 Home: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}`
+            `🎮 Rated Game Matchup!\n🚌 Away: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\n` +
+            `🏠 Home: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}`
           );
+
           queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
           await sendOrUpdateQueueMessage(client);
         }
       }
 
+      // --- Don't Play ---
       if (interaction.customId.startsWith('ack_decline_')) {
         if (player.timeoutId) clearTimeout(player.timeoutId);
         if (partner && partner.timeoutId) clearTimeout(partner.timeoutId);
