@@ -351,20 +351,18 @@ async function handleInteraction(interaction, client) {
 
       // --- Don't Play ---
       if (interaction.customId.startsWith('ack_decline_')) {
-        if (player.timeoutId) clearTimeout(player.timeoutId);
-        if (partner && partner.timeoutId) clearTimeout(partner.timeoutId);
-        if (partner && partner.matchupMessage) {
-          try { await partner.matchupMessage.delete(); } catch {}
-          partner.status = 'waiting';
-          delete partner.pendingPairId;
-          delete partner.matchupMessage;
-          delete partner.acknowledged;
-        }
-        if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
-        queue = queue.filter(u => u.id !== userId);
-        await sendOrUpdateQueueMessage(client);
-        await processPendingMatchups(client);
+          if (player.timeoutId) clearTimeout(player.timeoutId);
+          if (partner && partner.timeoutId) clearTimeout(partner.timeoutId);
+          if (partner && partner.matchupMessage) {
+            try { await partner.matchupMessage.delete(); } catch {}
+          }
+          if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
+          // Remove both players from queue
+          queue = queue.filter(u => ![player.id, partner?.id].includes(u.id));
+          await sendOrUpdateQueueMessage(client);
+          await processPendingMatchups(client);
       }
+
     }
 
   } catch (err) {
