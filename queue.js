@@ -174,15 +174,13 @@ async function processPendingMatchups(client) {
     const nhlEmojiMap = getNHLEmojiMap();
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
 
+    // Loop in pairs
     for (let i = 0; i + 1 < waitingPlayers.length; i += 2) {
       const p1 = waitingPlayers[i];
       const p2 = waitingPlayers[i + 1];
 
       // Skip if either player is already paired or locked
-      if (
-        p1.pendingPairId || p2.pendingPairId ||
-        p1.lockedForPairing || p2.lockedForPairing
-      ) continue;
+      if (p1.pendingPairId || p2.pendingPairId || p1.lockedForPairing || p2.lockedForPairing) continue;
 
       // Lock players for pairing
       p1.lockedForPairing = true;
@@ -197,7 +195,7 @@ async function processPendingMatchups(client) {
       p2.status = 'pending';
 
       // Randomly assign home/away teams
-      const teams = Object.keys(nhlEmojiMap);
+      const teams = Object.keys(getNHLEmojiMap());
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
       let awayTeam = teams[Math.floor(Math.random() * teams.length)];
       while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
@@ -207,50 +205,42 @@ async function processPendingMatchups(client) {
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
-      // --- Check for existing ack messages in memory or channel ---
-      let existingP1Msg = null;
-      let existingP2Msg = null;
+      // --- Send Ack Messages (prevent duplicates) ---
+      const messages = await channel.messages.fetch({ limit: 50 });
 
-      if (p1.matchupMessage) existingP1Msg = p1.matchupMessage;
-      if (p2.matchupMessage) existingP2Msg = p2.matchupMessage;
-
-      if (!existingP1Msg || !existingP2Msg) {
-        // Fetch last 50 messages in channel to check for duplicates
-        const messages = await channel.messages.fetch({ limit: 50 });
-
-        if (!existingP1Msg) {
-          existingP1Msg = messages.find(m =>
-            m.content.includes(`<@${p1.id}>`) && m.content.includes('🏠 Home')
-          );
-          if (existingP1Msg) p1.matchupMessage = existingP1Msg;
-        }
-
-        if (!existingP2Msg) {
-          existingP2Msg = messages.find(m =>
-            m.content.includes(`<@${p2.id}>`) && m.content.includes('🚌 Away')
-          );
-          if (existingP2Msg) p2.matchupMessage = existingP2Msg;
+      // Away
+      if (!p2.matchupMessage) {
+        const existingAway = messages.find(m =>
+          m.content.includes(`<@${p2.id}>`) && m.content.includes('🚌 Away')
+        );
+        if (existingAway) {
+          p2.matchupMessage = existingAway;
+        } else {
+          const awayContent =
+            `🎮 Matchup Pending Acknowledgment\nEach player, please acknowledge using the buttons below.\n\n` +
+            `🚌 Away\n<@${p2.id}> ${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}`;
+          const awayRow = buildAckButtons(p2.id, nhlEmojiMap[p2.awayTeam]);
+          p2.matchupMessage = await channel.send({ content: awayContent, components: [awayRow] });
         }
       }
 
-      // Only send new ack messages if none exist
-      if (!p1.matchupMessage && !p2.matchupMessage) {
-        // Away player message
-        const awayContent =
-          `🎮 Matchup Pending Acknowledgment\nEach player, please acknowledge using the buttons below.\n\n` +
-          `🚌 Away\n<@${p2.id}> ${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}`;
-        const awayRow = buildAckButtons(p2.id, nhlEmojiMap[p2.awayTeam]);
-        p2.matchupMessage = await channel.send({ content: awayContent, components: [awayRow] });
-
-        // Home player message
-        const homeContent =
-          `──────────────────────────\n\n` +
-          `🏠 Home\n<@${p1.id}> ${p1.name} [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}`;
-        const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
-        p1.matchupMessage = await channel.send({ content: homeContent, components: [homeRow] });
+      // Home
+      if (!p1.matchupMessage) {
+        const existingHome = messages.find(m =>
+          m.content.includes(`<@${p1.id}>`) && m.content.includes('🏠 Home')
+        );
+        if (existingHome) {
+          p1.matchupMessage = existingHome;
+        } else {
+          const homeContent =
+            `──────────────────────────\n\n` +
+            `🏠 Home\n<@${p1.id}> ${p1.name} [${p1.elo}] ${nhlEmojiMap[p1.homeTeam]}`;
+          const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
+          p1.matchupMessage = await channel.send({ content: homeContent, components: [homeRow] });
+        }
       }
 
-      // Set a timeout to clear the matchup if players don’t respond
+      // --- Timeout for unacknowledged matchup ---
       const timeoutId = setTimeout(async () => {
         try {
           const player1 = queue.find(u => u.id === p1.id);
@@ -282,7 +272,6 @@ async function processPendingMatchups(client) {
     processingMatchups = false;
   }
 }
-
 
 
 // ----------------- Interaction handler -----------------
