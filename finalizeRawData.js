@@ -1,4 +1,8 @@
 // finalizeRawData() — call this AFTER the parser writes the state to RawData
+
+import { google } from 'googleapis';
+
+
 async function finalizeRawData() {
   try {
     const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
