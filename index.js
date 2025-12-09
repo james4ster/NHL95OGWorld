@@ -26,8 +26,7 @@ import fetch from 'node-fetch';
 import { sendOrUpdateQueueMessage, handleInteraction, initializeQueue } from './queue.js';
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
 import processGameState from "./processGameState.js";
-//import readOgRomBinaryGameState from "./gameStateParsing/game-state/read-og-rom-game-state.js";
-//import fs from "node:fs/promises";
+import fs from "node:fs/promises";
 
 // === Config Variables ===
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
