@@ -27,6 +27,7 @@ import { sendOrUpdateQueueMessage, handleInteraction, initializeQueue } from './
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
 import processGameState from "./processGameState.js";
 import fs from "node:fs/promises";
+import { finalizeRawData } from './rawDataFinalizer.js'; // used to finalize rawdata tab with teams
 
 // === Config Variables ===
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
@@ -180,6 +181,9 @@ client.on('messageCreate', async (message) => {
     // --- Call the parser here ---
     await processGameState();
 
+    // --- Call finalizeRawData to update RawData and PendingGames ---
+    await finalizeRawData();
+    
     message.reply("✅ Game data successfully written to Google Sheets!");
 
   } catch (err) {
