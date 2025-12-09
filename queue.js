@@ -334,8 +334,21 @@ async function handleInteraction(interaction, client) {
           if (player.timeoutId) clearTimeout(player.timeoutId);
           if (partner.timeoutId) clearTimeout(partner.timeoutId);
 
-          if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
-          if (partner.matchupMessage) try { await partner.matchupMessage.delete(); } catch {}
+        if (player.matchupMessage) {
+          try {
+              await player.matchupMessage.delete();
+          } catch (err) {
+              console.error(err);
+          }
+        }
+
+        if (partner.matchupMessage) {
+          try {
+              await partner.matchupMessage.delete();
+          } catch (err) {
+              console.error(err);
+          }
+        }
 
           // --- Post to Rated Games channel ---
           await ratedChannel.send(
