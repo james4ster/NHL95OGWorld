@@ -166,28 +166,23 @@ async function processPendingMatchups(client) {
   try {
     // Only select players who are waiting and not already locked/paired/messaged
     const waitingPlayers = queue.filter(
-      u => u.status === 'waiting' && !u.pendingPairId && !u.matchupMessage && !u.lockedForPairing
+      u => u.status === 'waiting' && !u.pendingPairId && !u.lockedForPairing
     );
 
     if (waitingPlayers.length < 2) return;
 
     const nhlEmojiMap = getNHLEmojiMap();
-    const teams = Object.keys(nhlEmojiMap);
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
 
     for (let i = 0; i + 1 < waitingPlayers.length; i += 2) {
       const p1 = waitingPlayers[i];
       const p2 = waitingPlayers[i + 1];
 
-      // Skip if either player is already paired, has a matchup message, or is locked
+      // Skip if either player is already paired or locked
       if (
         p1.pendingPairId || p2.pendingPairId ||
-        p1.matchupMessage || p2.matchupMessage ||
         p1.lockedForPairing || p2.lockedForPairing
-      ) {
-        console.log(`🔹 Skipping ${p1.name} / ${p2.name}, already paired or has a matchup message`);
-        continue;
-      }
+      ) continue;
 
       // Lock players for pairing
       p1.lockedForPairing = true;
@@ -202,7 +197,7 @@ async function processPendingMatchups(client) {
       p2.status = 'pending';
 
       // Randomly assign home/away teams
-      const teams = Object.keys(getNHLEmojiMap());
+      const teams = Object.keys(nhlEmojiMap);
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
       let awayTeam = teams[Math.floor(Math.random() * teams.length)];
       while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
@@ -212,11 +207,34 @@ async function processPendingMatchups(client) {
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
-      // Only send ack messages if they don’t already exist
-      if (!p1.matchupMessage && !p2.matchupMessage) {
-        const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-        const nhlEmojiMap = getNHLEmojiMap();
+      // --- Check for existing ack messages in memory or channel ---
+      let existingP1Msg = null;
+      let existingP2Msg = null;
 
+      if (p1.matchupMessage) existingP1Msg = p1.matchupMessage;
+      if (p2.matchupMessage) existingP2Msg = p2.matchupMessage;
+
+      if (!existingP1Msg || !existingP2Msg) {
+        // Fetch last 50 messages in channel to check for duplicates
+        const messages = await channel.messages.fetch({ limit: 50 });
+
+        if (!existingP1Msg) {
+          existingP1Msg = messages.find(m =>
+            m.content.includes(`<@${p1.id}>`) && m.content.includes('🏠 Home')
+          );
+          if (existingP1Msg) p1.matchupMessage = existingP1Msg;
+        }
+
+        if (!existingP2Msg) {
+          existingP2Msg = messages.find(m =>
+            m.content.includes(`<@${p2.id}>`) && m.content.includes('🚌 Away')
+          );
+          if (existingP2Msg) p2.matchupMessage = existingP2Msg;
+        }
+      }
+
+      // Only send new ack messages if none exist
+      if (!p1.matchupMessage && !p2.matchupMessage) {
         // Away player message
         const awayContent =
           `🎮 Matchup Pending Acknowledgment\nEach player, please acknowledge using the buttons below.\n\n` +
@@ -264,6 +282,7 @@ async function processPendingMatchups(client) {
     processingMatchups = false;
   }
 }
+
 
 
 // ----------------- Interaction handler -----------------
