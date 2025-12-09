@@ -162,9 +162,10 @@ client.on('messageCreate', async (message) => {
   if (!message.attachments || message.attachments.size === 0) return;
 
   const attachment = message.attachments.first();
+  const attachmentName = attachment.name;
 
-  // Only allow .state or .bin uploads (whatever you need)
-  if (!attachment.name.endsWith('.state') && !attachment.name.endsWith('.bin')) {
+  // Regex: ends with ".state" optionally followed by digits
+  if (!/\.state\d*$/.test(attachmentName) && !attachmentName.endsWith('.bin')) {
     message.reply("⚠️ Please upload a valid game state file.");
     return;
   }
