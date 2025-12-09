@@ -330,22 +330,57 @@ async function handleInteraction(interaction, client) {
         await sendOrUpdateQueueMessage(client);
 
         // Finalize matchup if both acknowledged
-        if (partner && partner.acknowledged) {
+      if (partner && partner.acknowledged) {
           if (player.timeoutId) clearTimeout(player.timeoutId);
           if (partner.timeoutId) clearTimeout(partner.timeoutId);
 
           if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
           if (partner.matchupMessage) try { await partner.matchupMessage.delete(); } catch {}
 
+          // --- Post to Rated Games channel ---
           await ratedChannel.send(
-            `🎮 Rated Game Matchup!\n🚌 Away: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\n` +
-            `🏠 Home: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}`
+              `🎮 Rated Game Matchup!\n🚌 Away: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\n` +
+              `🏠 Home: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}`
           );
+
+          // --- Write matchup to PendingGames sheet ---
+          try {
+              const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+              const auth = new google.auth.GoogleAuth({
+                  credentials,
+                  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+              });
+              const sheets = google.sheets({ version: 'v4', auth });
+
+              const now = new Date().toISOString();
+
+              const newRow = [
+                  `${player.id}-${partner.id}-${Date.now()}`, // Unique
+                  partner.name,        // PlayerAway
+                  partner.awayTeam,    // AwayTeam
+                  player.name,         // PlayerHome
+                  player.homeTeam,     // HomeTeam
+                  now,                 // TimeStamp
+                  'Pending',           // Status
+                  ''                   // GameId (to fill after parsing)
+              ];
+
+              await sheets.spreadsheets.values.append({
+                  spreadsheetId: process.env.SPREADSHEET_ID,
+                  range: 'PendingGames!A:H',
+                  valueInputOption: 'USER_ENTERED',
+                  resource: { values: [newRow] }
+              });
+
+              console.log(`✅ Pending game recorded: ${player.name} vs ${partner.name}`);
+          } catch (err) {
+              console.error('❌ Failed to write PendingGames row:', err);
+          }
 
           queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
           await sendOrUpdateQueueMessage(client);
-        }
       }
+
 
       // --- Don't Play ---
       if (interaction.customId.startsWith('ack_decline_')) {

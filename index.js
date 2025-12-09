@@ -189,8 +189,6 @@ client.on('messageCreate', async (message) => {
 });
 
 
-
-
 // === Debug Events ===
 
     // WebSocket or Discord client errors
