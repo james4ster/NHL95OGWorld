@@ -164,6 +164,7 @@ async function processPendingMatchups(client) {
   processingMatchups = true;
 
   try {
+    // Only select players who are waiting and not already locked/paired/messaged
     const waitingPlayers = queue.filter(
       u => u.status === 'waiting' && !u.pendingPairId && !u.matchupMessage && !u.lockedForPairing
     );
@@ -178,16 +179,18 @@ async function processPendingMatchups(client) {
       const p1 = waitingPlayers[i];
       const p2 = waitingPlayers[i + 1];
 
+      // Skip if either is somehow already paired or locked (safety)
       if (p1.pendingPairId || p2.pendingPairId || p1.matchupMessage || p2.matchupMessage || p1.lockedForPairing || p2.lockedForPairing) continue;
 
+      // --- Lock players and mark pairing immediately ---
       p1.lockedForPairing = true;
       p2.lockedForPairing = true;
-
       p1.status = 'pending';
       p2.status = 'pending';
       p1.pendingPairId = p2.id;
       p2.pendingPairId = p1.id;
 
+      // Assign random teams
       let homeTeam = teams[Math.floor(Math.random() * teams.length)];
       let awayTeam = teams[Math.floor(Math.random() * teams.length)];
       while (awayTeam === homeTeam) awayTeam = teams[Math.floor(Math.random() * teams.length)];
@@ -197,6 +200,7 @@ async function processPendingMatchups(client) {
       p2.homeTeam = homeTeam;
       p2.awayTeam = awayTeam;
 
+      // --- Send matchup messages ---
       const awayContent =
         `🎮 Matchup Pending Acknowledgment\nEach player, please acknowledge using the buttons below.\n\n` +
         `🚌 Away\n<@${p2.id}> ${p2.name} [${p2.elo}] ${nhlEmojiMap[p2.awayTeam]}`;
@@ -209,26 +213,15 @@ async function processPendingMatchups(client) {
       const homeRow = buildAckButtons(p1.id, nhlEmojiMap[p1.homeTeam]);
       p1.matchupMessage = await channel.send({ content: homeContent, components: [homeRow] });
 
+      // --- Setup timeout for automatic removal ---
       const timeoutId = setTimeout(async () => {
         try {
           const player1 = queue.find(u => u.id === p1.id);
           const player2 = queue.find(u => u.id === p2.id);
 
           if (player1 && player2 && player1.pendingPairId === p2.id) {
-            if (player1.matchupMessage) {
-              try {
-                await player1.matchupMessage.delete();
-              } catch (err) {
-                console.error(err);
-              }
-            }
-            if (player2.matchupMessage) {
-              try {
-                await player2.matchupMessage.delete();
-              } catch (err) {
-                console.error(err);
-              }
-            }
+            if (player1.matchupMessage) try { await player1.matchupMessage.delete(); } catch {}
+            if (player2.matchupMessage) try { await player2.matchupMessage.delete(); } catch {}
 
             queue = queue.filter(u => ![p1.id, p2.id].includes(u.id));
             await sendOrUpdateQueueMessage(client);
@@ -252,6 +245,7 @@ async function processPendingMatchups(client) {
     processingMatchups = false;
   }
 }
+
 
 // ----------------- Interaction handler -----------------
 async function handleInteraction(interaction, client) {
