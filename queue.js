@@ -96,13 +96,12 @@ async function sendOrUpdateQueueMessage(client) {
 
   try {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-    
+
     const embed = await buildQueueEmbed();
     console.log('🔹 Queue embed built');
 
     let existing = null;
     if (client.queueMessageId) {
-      //console.log('🔹 Checking for existing queue message:', client.queueMessageId);
       try {
         existing = await channel.messages.fetch(client.queueMessageId);
         console.log('🔹 Found existing message');
@@ -110,23 +109,16 @@ async function sendOrUpdateQueueMessage(client) {
     }
 
     if (existing) {
-      //console.log('🔹 Editing existing message');
       await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
-      //console.log('✅ Message edited');
     } else {
-      //console.log('🔹 Searching for queue message in recent messages');
       const messages = await channel.messages.fetch({ limit: 10 });
       existing = messages.find(m => m.content === '**NHL \'95 Game Queue**');
       if (existing) {
-        //console.log('🔹 Found existing queue message, updating ID');
         client.queueMessageId = existing.id;
         await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
-        //console.log('✅ Message edited');
       } else {
-        //console.log('🔹 Creating new queue message');
         const newMsg = await channel.send({ content: '**NHL \'95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
         client.queueMessageId = newMsg.id;
-        //console.log('✅ New message created:', newMsg.id);
       }
     }
   } catch (err) {
@@ -188,7 +180,6 @@ async function processPendingMatchups(client) {
 
       if (p1.pendingPairId || p2.pendingPairId || p1.matchupMessage || p2.matchupMessage || p1.lockedForPairing || p2.lockedForPairing) continue;
 
-      // Lock players for pairing
       p1.lockedForPairing = true;
       p2.lockedForPairing = true;
 
@@ -224,8 +215,20 @@ async function processPendingMatchups(client) {
           const player2 = queue.find(u => u.id === p2.id);
 
           if (player1 && player2 && player1.pendingPairId === p2.id) {
-            if (player1.matchupMessage) try { await player1.matchupMessage.delete(); } catch {}
-            if (player2.matchupMessage) try { await player2.matchupMessage.delete(); } catch {}
+            if (player1.matchupMessage) {
+              try {
+                await player1.matchupMessage.delete();
+              } catch (err) {
+                console.error(err);
+              }
+            }
+            if (player2.matchupMessage) {
+              try {
+                await player2.matchupMessage.delete();
+              } catch (err) {
+                console.error(err);
+              }
+            }
 
             queue = queue.filter(u => ![p1.id, p2.id].includes(u.id));
             await sendOrUpdateQueueMessage(client);
@@ -235,7 +238,6 @@ async function processPendingMatchups(client) {
         } catch (err) {
           console.error('❌ Error handling matchup timeout:', err);
         } finally {
-          // Remove locks individually
           if (p1) delete p1.lockedForPairing;
           if (p2) delete p2.lockedForPairing;
         }
@@ -251,15 +253,15 @@ async function processPendingMatchups(client) {
   }
 }
 
-
-
 // ----------------- Interaction handler -----------------
 async function handleInteraction(interaction, client) {
   if (!interaction.isButton()) return;
   const userId = interaction.user.id;
 
   try {
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => {});
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate().catch(() => {});
+    }
 
     // --- Queue Join ---
     if (interaction.customId === 'join_queue') {
@@ -277,17 +279,32 @@ async function handleInteraction(interaction, client) {
       const leavingPlayer = queue.find(u => u.id === userId);
       if (leavingPlayer) {
         if (leavingPlayer.timeoutId) clearTimeout(leavingPlayer.timeoutId);
-        if (leavingPlayer.matchupMessage) try { await leavingPlayer.matchupMessage.delete(); } catch {}
+
+        if (leavingPlayer.matchupMessage) {
+          try {
+            await leavingPlayer.matchupMessage.delete();
+          } catch (err) {
+            console.error(err);
+          }
+        }
+
         const partner = queue.find(u => u.id === leavingPlayer.pendingPairId);
-        if (partner && partner.matchupMessage) {
+        if (partner) {
           if (partner.timeoutId) clearTimeout(partner.timeoutId);
-          try { await partner.matchupMessage.delete(); } catch {}
+          if (partner.matchupMessage) {
+            try {
+              await partner.matchupMessage.delete();
+            } catch (err) {
+              console.error(err);
+            }
+          }
           partner.status = 'waiting';
           delete partner.pendingPairId;
           delete partner.matchupMessage;
           delete partner.acknowledged;
         }
       }
+
       queue = queue.filter(u => u.id !== userId);
       await sendOrUpdateQueueMessage(client);
       return;
@@ -313,7 +330,6 @@ async function handleInteraction(interaction, client) {
       if (interaction.customId.startsWith('ack_play_')) {
         player.acknowledged = true;
 
-        // DISABLE buttons on matchup message directly
         if (interaction.message) {
           const disabledRow = new ActionRowBuilder().addComponents(
             interaction.message.components[0].components.map(btn =>
@@ -330,87 +346,93 @@ async function handleInteraction(interaction, client) {
         await sendOrUpdateQueueMessage(client);
 
         // Finalize matchup if both acknowledged
-      if (partner && partner.acknowledged) {
+        if (partner && partner.acknowledged) {
           if (player.timeoutId) clearTimeout(player.timeoutId);
           if (partner.timeoutId) clearTimeout(partner.timeoutId);
 
-        if (player.matchupMessage) {
-          try {
+          if (player.matchupMessage) {
+            try {
               await player.matchupMessage.delete();
-          } catch (err) {
+            } catch (err) {
               console.error(err);
+            }
           }
-        }
-
-        if (partner.matchupMessage) {
-          try {
+          if (partner.matchupMessage) {
+            try {
               await partner.matchupMessage.delete();
-          } catch (err) {
+            } catch (err) {
               console.error(err);
+            }
           }
-        }
 
-          // --- Post to Rated Games channel ---
           await ratedChannel.send(
-              `🎮 Rated Game Matchup!\n🚌 Away: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\n` +
-              `🏠 Home: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}`
+            `🎮 Rated Game Matchup!\n🚌 Away: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\n` +
+            `🏠 Home: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}`
           );
 
-          // --- Write matchup to PendingGames sheet ---
           try {
-              const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-              const auth = new google.auth.GoogleAuth({
-                  credentials,
-                  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-              });
-              const sheets = google.sheets({ version: 'v4', auth });
+            const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+            const auth = new google.auth.GoogleAuth({
+              credentials,
+              scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+            });
+            const sheets = google.sheets({ version: 'v4', auth });
 
-              const now = new Date().toISOString();
+            const now = new Date().toISOString();
 
-              const newRow = [
-                  `${player.id}-${partner.id}-${Date.now()}`, // Unique
-                  partner.name,        // PlayerAway
-                  partner.awayTeam,    // AwayTeam
-                  player.name,         // PlayerHome
-                  player.homeTeam,     // HomeTeam
-                  now,                 // TimeStamp
-                  'Pending',           // Status
-                  ''                   // GameId (to fill after parsing)
-              ];
+            const newRow = [
+              `${player.id}-${partner.id}-${Date.now()}`,
+              partner.name,
+              partner.awayTeam,
+              player.name,
+              player.homeTeam,
+              now,
+              'Pending',
+              ''
+            ];
 
-              await sheets.spreadsheets.values.append({
-                  spreadsheetId: process.env.SPREADSHEET_ID,
-                  range: 'PendingGames!A:H',
-                  valueInputOption: 'USER_ENTERED',
-                  resource: { values: [newRow] }
-              });
+            await sheets.spreadsheets.values.append({
+              spreadsheetId: process.env.SPREADSHEET_ID,
+              range: 'PendingGames!A:H',
+              valueInputOption: 'USER_ENTERED',
+              resource: { values: [newRow] }
+            });
 
-              console.log(`✅ Pending game recorded: ${player.name} vs ${partner.name}`);
+            console.log(`✅ Pending game recorded: ${player.name} vs ${partner.name}`);
           } catch (err) {
-              console.error('❌ Failed to write PendingGames row:', err);
+            console.error('❌ Failed to write PendingGames row:', err);
           }
 
           queue = queue.filter(u => ![player.id, partner.id].includes(u.id));
           await sendOrUpdateQueueMessage(client);
+        }
       }
-
 
       // --- Don't Play ---
       if (interaction.customId.startsWith('ack_decline_')) {
-          if (player.timeoutId) clearTimeout(player.timeoutId);
-          if (partner && partner.timeoutId) clearTimeout(partner.timeoutId);
-          if (partner && partner.matchupMessage) {
-            try { await partner.matchupMessage.delete(); } catch {}
+        if (player.timeoutId) clearTimeout(player.timeoutId);
+        if (partner && partner.timeoutId) clearTimeout(partner.timeoutId);
+
+        if (partner && partner.matchupMessage) {
+          try {
+            await partner.matchupMessage.delete();
+          } catch (err) {
+            console.error(err);
           }
-          if (player.matchupMessage) try { await player.matchupMessage.delete(); } catch {}
-          // Remove both players from queue
-          queue = queue.filter(u => ![player.id, partner?.id].includes(u.id));
-          await sendOrUpdateQueueMessage(client);
-          await processPendingMatchups(client);
+        }
+        if (player.matchupMessage) {
+          try {
+            await player.matchupMessage.delete();
+          } catch (err) {
+            console.error(err);
+          }
+        }
+
+        queue = queue.filter(u => ![player.id, partner?.id].includes(u.id));
+        await sendOrUpdateQueueMessage(client);
+        await processPendingMatchups(client);
       }
-
     }
-
   } catch (err) {
     console.error('❌ Error handling interaction:', err);
   }
@@ -425,7 +447,11 @@ async function initializeQueue(client) {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const messages = await channel.messages.fetch({ limit: 100 });
     for (const msg of messages.values()) {
-      try { await msg.delete(); } catch {}
+      try {
+        await msg.delete();
+      } catch (err) {
+        console.error(err);
+      }
     }
 
     await sendOrUpdateQueueMessage(client);
@@ -441,7 +467,11 @@ async function resetQueueChannel(client, options = { clearMemory: true }) {
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
     const messages = await channel.messages.fetch({ limit: 50 });
     for (const msg of messages.values()) {
-      try { await msg.delete(); } catch {}
+      try {
+        await msg.delete();
+      } catch (err) {
+        console.error(err);
+      }
     }
 
     if (options.clearMemory) {
