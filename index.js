@@ -151,44 +151,54 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // === Game State Upload Handler ===
+// === Game State Upload Handler ===
 client.on('messageCreate', async (message) => {
-  // Ignore bot messages
   if (message.author.bot) return;
-
-  // Only trigger in the save-state upload channel
   if (message.channel.id !== STATE_UPLOAD_CHANNEL_ID) return;
-
-  // No attachments? Ignore
   if (!message.attachments || message.attachments.size === 0) return;
 
   const attachment = message.attachments.first();
   const attachmentName = attachment.name;
 
-  // Regex: ends with ".state" optionally followed by digits
   if (!/\.state\d*$/.test(attachmentName) && !attachmentName.endsWith('.bin')) {
     message.reply("⚠️ Please upload a valid game state file.");
     return;
   }
 
+  let processingMsg; // need to reference later for deletion
+
   try {
-    // Download the file into your workspace
+    // 1️⃣ Download the game state file
     const res = await fetch(attachment.url);
     const arrayBuffer = await res.arrayBuffer();
     await fs.writeFile("./NHL_95.state30", Buffer.from(arrayBuffer));
 
-    message.reply("📥 Game state received. Processing...");
+    // 2️⃣ Send a temporary "processing" message
+    processingMsg = await message.channel.send("📥 Game state received. Processing...");
 
-    // --- Call the parser here ---
+    // 3️⃣ Call the parser to update RawData
     await processGameState();
 
-    // --- Call finalizeRawData to update RawData and PendingGames ---
+    // 4️⃣ Finalize RawData from PendingGames
     await finalizeRawData();
-    
-    message.reply("✅ Game data successfully written to Google Sheets!");
 
+    // 5️⃣ Delete the processing message to keep channel clean
+    if (processingMsg && !processingMsg.deleted) {
+      await processingMsg.delete().catch(() => {});
+    }
+
+    // 6️⃣ React to the original file message with a ✅
+    await message.react("✅");
+
+    console.log("✅ Game data successfully written to Google Sheets!");
   } catch (err) {
     console.error("❌ Error processing game state:", err);
-    message.reply("❌ Error processing game state. Check logs.");
+
+    if (processingMsg && !processingMsg.deleted) {
+      await processingMsg.edit("❌ Error processing game state. Check logs.").catch(() => {});
+    } else {
+      await message.channel.send("❌ Error processing game state. Check logs.");
+    }
   }
 });
 
