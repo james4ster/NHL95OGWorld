@@ -1610,7 +1610,7 @@ if(awaySkaterCount < 22){
         //FIXME: in future remove tempCSVData as its for updating google sheets
         let gameProperties = {
           data: GAME_DATA,
-          // tempCSVData: headerArray
+          tempCSVData: headerArray
         };
         return gameProperties
       } catch (error) {
