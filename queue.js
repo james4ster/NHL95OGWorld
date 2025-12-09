@@ -95,16 +95,14 @@ async function sendOrUpdateQueueMessage(client) {
   queueUpdateInProgress = true;
 
   try {
-    console.log('🔹 sendOrUpdateQueueMessage called');
     const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
-    console.log('🔹 Channel fetched in sendOrUpdate');
-
+    
     const embed = await buildQueueEmbed();
     console.log('🔹 Queue embed built');
 
     let existing = null;
     if (client.queueMessageId) {
-      console.log('🔹 Checking for existing queue message:', client.queueMessageId);
+      //console.log('🔹 Checking for existing queue message:', client.queueMessageId);
       try {
         existing = await channel.messages.fetch(client.queueMessageId);
         console.log('🔹 Found existing message');
@@ -112,23 +110,23 @@ async function sendOrUpdateQueueMessage(client) {
     }
 
     if (existing) {
-      console.log('🔹 Editing existing message');
+      //console.log('🔹 Editing existing message');
       await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
-      console.log('✅ Message edited');
+      //console.log('✅ Message edited');
     } else {
-      console.log('🔹 Searching for queue message in recent messages');
+      //console.log('🔹 Searching for queue message in recent messages');
       const messages = await channel.messages.fetch({ limit: 10 });
       existing = messages.find(m => m.content === '**NHL \'95 Game Queue**');
       if (existing) {
-        console.log('🔹 Found existing queue message, updating ID');
+        //console.log('🔹 Found existing queue message, updating ID');
         client.queueMessageId = existing.id;
         await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
-        console.log('✅ Message edited');
+        //console.log('✅ Message edited');
       } else {
-        console.log('🔹 Creating new queue message');
+        //console.log('🔹 Creating new queue message');
         const newMsg = await channel.send({ content: '**NHL \'95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
         client.queueMessageId = newMsg.id;
-        console.log('✅ New message created:', newMsg.id);
+        //console.log('✅ New message created:', newMsg.id);
       }
     }
   } catch (err) {

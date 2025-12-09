@@ -25,6 +25,7 @@ import { google } from 'googleapis';
 import fetch from 'node-fetch';
 import { sendOrUpdateQueueMessage, handleInteraction, initializeQueue } from './queue.js';
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
+import processGameState from "./processGameState.js";
 //import readOgRomBinaryGameState from "./gameStateParsing/game-state/read-og-rom-game-state.js";
 //import fs from "node:fs/promises";
 
@@ -148,6 +149,47 @@ app.listen(PORT, () => {
 client.on('interactionCreate', async (interaction) => {
   await handleInteraction(interaction, client);
 });
+
+// === Game State Upload Handler ===
+client.on('messageCreate', async (message) => {
+  // Ignore bot messages
+  if (message.author.bot) return;
+
+  // Only trigger in the save-state upload channel
+  if (message.channel.id !== STATE_UPLOAD_CHANNEL_ID) return;
+
+  // No attachments? Ignore
+  if (!message.attachments || message.attachments.size === 0) return;
+
+  const attachment = message.attachments.first();
+
+  // Only allow .state or .bin uploads (whatever you need)
+  if (!attachment.name.endsWith('.state') && !attachment.name.endsWith('.bin')) {
+    message.reply("⚠️ Please upload a valid game state file.");
+    return;
+  }
+
+  try {
+    // Download the file into your workspace
+    const res = await fetch(attachment.url);
+    const arrayBuffer = await res.arrayBuffer();
+    await fs.writeFile("./NHL_95.state30", Buffer.from(arrayBuffer));
+
+    message.reply("📥 Game state received. Processing...");
+
+    // --- Call the parser here ---
+    await processGameState();
+
+    message.reply("✅ Game data successfully written to Google Sheets!");
+
+  } catch (err) {
+    console.error("❌ Error processing game state:", err);
+    message.reply("❌ Error processing game state. Check logs.");
+  }
+});
+
+
+
 
 // === Debug Events ===
 
