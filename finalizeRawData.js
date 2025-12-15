@@ -2,7 +2,7 @@
 
 import { google } from 'googleapis';
 import updateCoachesStreaks from './updateCoachesStreaks.js'; // after processing raw data updates
-import updateElo from './updateElO.js';
+import updateElo from './updateELO.js';
 
 
 async function finalizeRawData() {
@@ -103,7 +103,11 @@ async function finalizeRawData() {
     console.log(`✅ Finalized ${rawUpdates.length} RawData row(s) from PendingGames`);
 
     // Update ELO after finalizing RawData
-    await updateElo(); 
+    await updateElo({
+      sheets,
+      spreadsheetId: process.env.SPREADSHEET_ID
+    });
+ 
 
     
   } catch (err) {
