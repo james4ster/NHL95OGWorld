@@ -38,7 +38,10 @@ export default async function updateElo({ sheets, spreadsheetId }) {
   }
 
   // --- Already processed GameIDs
-  const processedGameIDs = new Set(historyValues.slice(1).map(r => r[0] && r[18] === "Y" ? String(r[0]) : null).filter(Boolean));
+  const processedGameIDs = new Set(historyValues.slice(1)
+    .map(r => r[0] && r[18] === "Y" ? String(r[0]) : null)
+    .filter(Boolean)
+  );
 
   const newHistoryRows = [];
 
@@ -78,9 +81,11 @@ export default async function updateElo({ sheets, spreadsheetId }) {
     const homePostElo = Math.round(homePreElo + K_FACTOR * (scoreHome - expectedHome) * homeStrength);
     const awayPostElo = Math.round(awayPreElo + K_FACTOR * (scoreAway - expectedAway) * awayStrength);
 
-    const homeTeam = row[71] ?? ""; // BT column
-    const awayTeam = row[70] ?? ""; // BS column
-    
+    // --- Calculate ELO changes
+    const eloChangeHome = homePostElo - homePreElo;
+    const eloChangeAway = awayPostElo - awayPreElo;
+
+    // --- Update maps
     eloMap[homeMgr] = homePostElo;
     eloMap[awayMgr] = awayPostElo;
 
@@ -89,7 +94,7 @@ export default async function updateElo({ sheets, spreadsheetId }) {
     highMap[awayMgr] = Math.max(highMap[awayMgr] || 1500, awayPostElo);
     lowMap[awayMgr] = Math.min(lowMap[awayMgr] || 1500, awayPostElo);
 
-   
+    // --- Push to history
     newHistoryRows.push([
       gameId, season, "", homeMgr, awayMgr,
       homeTeam, homeResult, homeScore,
@@ -106,7 +111,7 @@ export default async function updateElo({ sheets, spreadsheetId }) {
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `EloHistory!A${firstEmptyRow}`,
-      valueInputOption: "RAW",
+      valueInputOption: "USER_ENTERED",
       resource: { values: newHistoryRows }
     });
   }
@@ -126,7 +131,7 @@ export default async function updateElo({ sheets, spreadsheetId }) {
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: update.range,
-      valueInputOption: "RAW",
+      valueInputOption: "USER_ENTERED",
       resource: { values: update.values }
     });
   }
