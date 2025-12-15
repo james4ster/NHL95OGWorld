@@ -1,7 +1,6 @@
 // RawStandings params
 const raw_standings_col_start = "A";
 const streak_col = "G";
-const emoji_col = "AS"; // column to store streak emoji
 
 //======================================================
 // Helper function to parse streak strings (e.g., "5W")
@@ -16,24 +15,7 @@ function parseStreak(streak) {
 }
 
 //======================================================
-// Helper function to get streak emoji
-function getStreakEmoji(streak) {
-  if (!streak) return "";
-  const num = parseInt(streak.slice(0, -1), 10); // numeric part
-  const type = streak.slice(-1).toUpperCase();   // W/L/T
-
-  if (type === "W") {
-    if (num >= 10) return "🔥🔥";
-    if (num >= 5) return "🔥";
-  } else if (type === "L") {
-    if (num >= 10) return "🧊🧊";
-    if (num >= 5) return "🧊";
-  }
-  return "";
-}
-
-//======================================================
-// Main function to update streaks and emoji
+// Main function to update streaks
 export default async function updateCoachesStreaks({
   sheets,
   spreadsheetId,
@@ -68,12 +50,15 @@ export default async function updateCoachesStreaks({
     if (homeCoachFound && awayCoachFound) break;
   }
 
-  if (!homeCoachFound) throw new Error("Home teams coach not found.");
-  if (!awayCoachFound) throw new Error("Away teams coach not found.");
+  if (!homeCoachFound) throw new Error("Home coach not found.");
+  if (!awayCoachFound) throw new Error("Away coach not found.");
 
   const previousHomeCoachesStreak = rawStandingsData[homeCoachesRawStandings - 1][6];
   const previousAwayCoachesStreak = rawStandingsData[awayCoachesRawStandings - 1][6];
 
+  ////////////////////////
+  // Determine results
+  ////////////////////////
   let homeTeamResult, awayTeamResult;
   if (+homeTeamScore > +awayTeamScore) {
     homeTeamResult = "W"; awayTeamResult = "L";
@@ -86,49 +71,22 @@ export default async function updateCoachesStreaks({
   ////////////////////////
   // Compute updated streaks
   ////////////////////////
-  let updatedHomeCoachesStreak;
-  let updatedAwayCoachesStreak;
-
   const parsedHome = parseStreak(previousHomeCoachesStreak);
-  if (!parsedHome || parsedHome.type !== homeTeamResult) {
-    updatedHomeCoachesStreak = `1${homeTeamResult}`;
-  } else {
-    updatedHomeCoachesStreak = `${parsedHome.length + 1}${homeTeamResult}`;
-  }
+  const updatedHomeCoachesStreak = !parsedHome || parsedHome.type !== homeTeamResult
+    ? `1${homeTeamResult}`
+    : `${parsedHome.length + 1}${homeTeamResult}`;
 
   const parsedAway = parseStreak(previousAwayCoachesStreak);
-  if (!parsedAway || parsedAway.type !== awayTeamResult) {
-    updatedAwayCoachesStreak = `1${awayTeamResult}`;
-  } else {
-    updatedAwayCoachesStreak = `${parsedAway.length + 1}${awayTeamResult}`;
-  }
+  const updatedAwayCoachesStreak = !parsedAway || parsedAway.type !== awayTeamResult
+    ? `1${awayTeamResult}`
+    : `${parsedAway.length + 1}${awayTeamResult}`;
 
   ////////////////////////
-  // Compute emojis
-  ////////////////////////
-  const homeEmoji = getStreakEmoji(updatedHomeCoachesStreak);
-  const awayEmoji = getStreakEmoji(updatedAwayCoachesStreak);
-
-  ////////////////////////
-  // Write streaks + emoji
+  // Write streaks to RawStandings
   ////////////////////////
   const updateStreakRequests = [
-    {
-      range: `RawStandings!${streak_col}${homeCoachesRawStandings}`,
-      values: [[updatedHomeCoachesStreak]],
-    },
-    {
-      range: `RawStandings!${streak_col}${awayCoachesRawStandings}`,
-      values: [[updatedAwayCoachesStreak]],
-    },
-    {
-      range: `RawStandings!${emoji_col}${homeCoachesRawStandings}`,
-      values: [[homeEmoji]],
-    },
-    {
-      range: `RawStandings!${emoji_col}${awayCoachesRawStandings}`,
-      values: [[awayEmoji]],
-    }
+    { range: `RawStandings!${streak_col}${homeCoachesRawStandings}`, values: [[updatedHomeCoachesStreak]] },
+    { range: `RawStandings!${streak_col}${awayCoachesRawStandings}`, values: [[updatedAwayCoachesStreak]] },
   ];
 
   await sheets.spreadsheets.values.batchUpdate({
