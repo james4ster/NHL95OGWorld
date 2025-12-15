@@ -2,7 +2,7 @@
 
 import { google } from 'googleapis';
 import updateCoachesStreaks from './updateCoachesStreaks.js'; // after processing raw data updates
-import updateElo from './updateElo.js';
+import updateElo from './updateElO.js';
 
 
 async function finalizeRawData() {
