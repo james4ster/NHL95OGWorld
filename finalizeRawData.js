@@ -1,6 +1,7 @@
 // finalizeRawData() — call this AFTER the parser writes the state to RawData
 
 import { google } from 'googleapis';
+import updateCoachesStreaks from './updateCoachesStreaks.js'; // after processing raw data updates
 
 
 async function finalizeRawData() {
@@ -46,7 +47,12 @@ async function finalizeRawData() {
 
         if ((rdBQ || rdBR)) continue; // Skip if already filled
         if (rdHomeTeam === homeTeam && rdAwayTeam === awayTeam) {
-          // Prepare update
+
+          // Scores from RawData
+          const awayScore = rd[13]; // Column N
+          const homeScore = rd[41]; // Column AP
+
+          // Assign coaches to RawData
           rawUpdates.push({
             range: `RawData!BQ${j + 1}:BR${j + 1}`,
             values: [[homePlayer, awayPlayer]],
@@ -58,8 +64,19 @@ async function finalizeRawData() {
             values: [['Processed']],
           });
 
+          // Update coach streaks (runs once per finalized game)
+          await updateCoachesStreaks({
+            sheets,
+            spreadsheetId: process.env.SPREADSHEET_ID,
+            homeCoach: homePlayer,
+            awayCoach: awayPlayer,
+            homeTeamScore: homeScore,
+            awayTeamScore: awayScore,
+          });
+
           break; // Match found, move to next PendingGames row
         }
+
       }
     }
 
