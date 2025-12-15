@@ -95,13 +95,17 @@ export default async function updateElo({ sheets, spreadsheetId }) {
     lowMap[awayMgr] = Math.min(lowMap[awayMgr] || 1500, awayPostElo);
 
     // --- Push to history
+    const timestamp = new Date().toLocaleString("en-US", {
+      timeZone: "America/New_York",
+    });
+
     newHistoryRows.push([
       gameId, season, "", homeMgr, awayMgr,
       homeTeam, homeResult, homeScore,
       awayTeam, awayResult, awayScore,
       homePreElo, awayPreElo, homePostElo, awayPostElo,
       eloChangeHome, eloChangeAway, "", "Y",
-      new Date().toLocaleString() // Timestamp
+      timestamp
     ]);
   }
 

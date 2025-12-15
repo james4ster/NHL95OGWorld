@@ -41,7 +41,7 @@ async function finalizeRawData() {
       // Find RawData rows where BQ/BR are blank and Home/Away match
       for (let j = 0; j < rawRows.length; j++) {
         const rd = rawRows[j];
-        const rdHomeTeam = rd[7]; // H = column H (index 7)
+        const rdHomeTeam = rd[7]; // H = column H (indezx 7)
         const rdAwayTeam = rd[8]; // I = column I (index 8)
         const rdBQ = rd[68]; // BQ = index 68
         const rdBR = rd[69]; // BR = index 69
@@ -59,10 +59,13 @@ async function finalizeRawData() {
             values: [[homePlayer, awayPlayer]],
           });
 
-          // Mark PendingGames as processed
-          pendingUpdates.push({
-            range: `PendingGames!G${i + 1}`,
-            values: [['Processed']],
+          // Game ID from RawData (column B)
+          const gameId = rd[1];
+
+          // Mark PendingGames as processed + write GameID to column H
+         pendingUpdates.push({
+            range: `PendingGames!G${i + 1}:H${i + 1}`,
+            values: [['Processed', gameId]],
           });
 
           // Update coach streaks (runs once per finalized game)
