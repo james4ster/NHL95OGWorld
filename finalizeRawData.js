@@ -2,6 +2,7 @@
 
 import { google } from 'googleapis';
 import updateCoachesStreaks from './updateCoachesStreaks.js'; // after processing raw data updates
+import updateElo from './updateElo.js';
 
 
 async function finalizeRawData() {
@@ -99,8 +100,12 @@ async function finalizeRawData() {
         resource: { values: u.values },
       });
     }
-
     console.log(`✅ Finalized ${rawUpdates.length} RawData row(s) from PendingGames`);
+
+    // Update ELO after finalizing RawData
+    await updateElo(); 
+
+    
   } catch (err) {
     console.error('❌ Error finalizing RawData:', err);
   }
