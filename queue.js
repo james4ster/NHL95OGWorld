@@ -140,20 +140,22 @@ async function fetchPlayerData(discordId) {
 
   const [pmRes, rsRes] = await Promise.all([
     sheets.spreadsheets.values.get({ spreadsheetId: process.env.SPREADSHEET_ID, range: 'PlayerMaster!A:C' }),
-    sheets.spreadsheets.values.get({ spreadsheetId: process.env.SPREADSHEET_ID, range: 'RawStandings!A:AM' })
+    sheets.spreadsheets.values.get({ spreadsheetId: process.env.SPREADSHEET_ID, range: 'RawStandings!A:AO' })
   ]);
 
   const playerMasterData = pmRes.data.values || [];
   const rawStandingsData = rsRes.data.values || [];
 
   const pmRow = playerMasterData.find(r => r[0]?.trim() === discordId);
-  const nickname = pmRow ? pmRow[2]?.trim() : null;
+  const nickname = pmRow ? pmRow[2]?.trim() : 'Unknown';
 
-  const rsRow = rawStandingsData.find(r => r[0]?.trim() === nickname);
-  const elo = rsRow ? parseInt(rsRow[38], 10) : 1500;
+  // ⚡ Fix: Match RawStandings column A (Discord ID), not nickname
+  const rsRow = rawStandingsData.find(r => r[0]?.trim() === discordId);
+  const elo = rsRow ? parseInt(rsRow[39], 10) || 1500 : 1500;
 
-  return { nickname: nickname || 'Unknown', elo };
+  return { nickname, elo };
 }
+
 
 // ----------------- Pairing processor -----------------
 let processingMatchups = false;
