@@ -151,7 +151,7 @@ async function fetchPlayerData(discordId) {
 
   // ⚡ Fix: Match RawStandings column A (Discord ID), not nickname
   const rsRow = rawStandingsData.find(r => r[0]?.trim() === discordId);
-  const elo = rsRow ? parseInt(rsRow[39], 10) || 1500 : 1500;
+  const elo = rsRow ? parseInt(rsRow[38], 10) || 1500 : 1500; //ELO column AM
 
   return { nickname, elo };
 }
