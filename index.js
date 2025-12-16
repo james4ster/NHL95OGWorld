@@ -28,6 +28,9 @@ import { getNHLEmojiMap } from './nhlEmojiMap.js';
 import processGameState from "./processGameState.js";
 import fs from "node:fs/promises";
 import { finalizeRawData } from './finalizeRawData.js'; // used to finalize rawdata tab with teams
+import { updateDiscordIcons } from './updateDiscordIcons.js'; // pulls in discord icon to playermaster
+
+
 
 // === Config Variables ===
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
@@ -105,6 +108,15 @@ client.on('guildMemberAdd', async (member) => {
       });
       console.log(`✅ Added ${username} to PlayerMaster`);
 
+      // Update Discord icons in PlayerMaster
+      try {
+        await updateDiscordIcons(client);
+        console.log(`✅ Updated Discord icons after adding ${username}`);
+      } catch (err) {
+        console.error(`❌ Failed to update Discord icons for ${username}:`, err);
+      }
+
+      
       // Set default ELO
       const rawRes = await sheets.spreadsheets.values.get({
         spreadsheetId: process.env.SPREADSHEET_ID,
@@ -240,7 +252,28 @@ client.once('ready', async () => {
   } catch (err) {
     console.error('❌ Error during queue initialization:', err);
   }
-});
+
+  // --- 1️⃣ Refresh all Discord icons immediately on startup ---
+    try {
+      console.log('🔄 Refreshing all Discord icons on startup...');
+      await updateDiscordIcons(client);
+      console.log('✅ All Discord icons updated on startup');
+    } catch (err) {
+      console.error('❌ Failed to refresh Discord icons on startup:', err);
+    }
+
+    // --- 2️⃣ Set up periodic refresh (every 6 hours) ---
+    const SIX_HOURS = 6 * 60 * 60 * 1000;
+    setInterval(async () => {
+      try {
+        console.log('🔄 Refreshing all Discord icons (scheduled)...');
+        await updateDiscordIcons(client);
+        console.log('✅ All Discord icons updated (scheduled)');
+      } catch (err) {
+        console.error('❌ Failed to refresh Discord icons (scheduled):', err);
+      }
+    }, SIX_HOURS);
+  });
 
 // === Discord Login ===
 async function startDiscord() {
