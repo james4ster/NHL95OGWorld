@@ -146,13 +146,17 @@ async function fetchPlayerData(discordId) {
   const playerMasterData = pmRes.data.values || [];
   const rawStandingsData = rsRes.data.values || [];
 
+  // Step 1: Get nickname from PlayerMaster
   const pmRow = playerMasterData.find(r => r[0]?.trim() === discordId);
   const nickname = pmRow ? pmRow[2]?.trim() : 'Unknown';
 
-  // ⚡ Fix: Match RawStandings column A (Discord ID), not nickname
-  const rsRow = rawStandingsData.find(r => r[0]?.trim() === discordId);
-  const elo = rsRow ? parseInt(rsRow[38], 10) || 1500 : 1500; //ELO column AM
+  // Step 2: Look up RawStandings row using nickname
+  const rsRow = rawStandingsData.find(r => r[0]?.trim() === nickname);
 
+  // Step 3: Get ELO from column AM (index 38)
+  const elo = rsRow ? parseInt(rsRow[38], 10) || 1500 : 1500;
+
+  console.log('🔹 fetchPlayerData', { discordId, nickname, elo, rsRow });
   return { nickname, elo };
 }
 
