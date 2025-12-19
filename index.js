@@ -100,6 +100,7 @@ client.on('guildMemberAdd', async (member) => {
     const existingIds = playerRes.data.values ? playerRes.data.values.flat() : [];
 
     if (!existingIds.includes(discordId)) {
+      // Add to PlayerMaster
       await sheets.spreadsheets.values.append({
         spreadsheetId: process.env.SPREADSHEET_ID,
         range: 'PlayerMaster!A:E',
@@ -109,7 +110,7 @@ client.on('guildMemberAdd', async (member) => {
       });
       console.log(`✅ Added ${username} to PlayerMaster`);
 
-      // Update Discord icons in PlayerMaster
+      // Update Discord icons
       try {
         await updateDiscordIcons(client);
         console.log(`✅ Updated Discord icons after adding ${username}`);
@@ -117,45 +118,20 @@ client.on('guildMemberAdd', async (member) => {
         console.error(`❌ Failed to update Discord icons for ${username}:`, err);
       }
 
-      
-      // Set default ELO
-      const rawRes = await sheets.spreadsheets.values.get({
-        spreadsheetId: process.env.SPREADSHEET_ID,
-        range: 'RawStandings!A:AO',
-      });
-      const data = rawRes.data.values || [];
-      const rowIndex = data.findIndex(row => row[0] === discordId);
-
-      if (rowIndex !== -1 && !data[rowIndex][38]) {
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: process.env.SPREADSHEET_ID,
-          range: `RawStandings!AM${rowIndex + 1}:AO${rowIndex + 1}`,
-          valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [[1500, 1500, 1500]] },
-        });
-        console.log(`✅ Set default ELO = 1500 for ${username}`);
-      }
+      // Assign default role
+      const roleId = '1433493333149352099'; // general-player role
+      const role = member.guild.roles.cache.get(roleId);
+      if (role) await member.roles.add(role);
     }
 
-    // Assign default role
-    const roleId = '1433493333149352099'; // general-player role
-    const role = member.guild.roles.cache.get(roleId);
-    if (role) await member.roles.add(role);
+    // Assign default ELO for all new joiners (sheets is always in scope)
+    await assignDefaultELO(sheets);
 
   } catch (err) {
     console.error('❌ Error processing new member:', err);
   }
-
-  // assign default ELO(1500) for new joiners to rawstandings (AM-AO):
-  try {
-    await assignDefaultELO(sheets);
-  } catch (err) {
-    console.error('❌ Error processing default ELOs:', err);
-  }
-
-
-  
 });
+
 
 // === Express Server for Render Health Check ===
 const app = express();
