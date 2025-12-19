@@ -1,4 +1,7 @@
 // updateElo.js
+// This script is called by the bot to update ELO after a game is processed
+//===========================================================================
+
 export default async function updateElo({ sheets, spreadsheetId }) {
   const K_FACTOR = 20;
 

@@ -27,8 +27,9 @@ import { sendOrUpdateQueueMessage, handleInteraction, initializeQueue } from './
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
 import processGameState from "./processGameState.js";
 import fs from "node:fs/promises";
-import { finalizeRawData } from './finalizeRawData.js'; // used to finalize rawdata tab with teams
-import { updateDiscordIcons } from './updateDiscordIcons.js'; // pulls in discord icon to playermaster
+import { finalizeRawData } from './finalizeRawData.js';         // used to finalize rawdata tab with teams
+import { updateDiscordIcons } from './updateDiscordIcons.js';   // pulls in discord icon to playermaster
+import { assignDefaultELO } from './assignDefaultELO.js';       // assigns default ELO to new players
 
 
 
@@ -144,6 +145,16 @@ client.on('guildMemberAdd', async (member) => {
   } catch (err) {
     console.error('❌ Error processing new member:', err);
   }
+
+  // assign default ELO(1500) for new joiners to rawstandings (AM-AO):
+  try {
+    await assignDefaultELO(sheets);
+  } catch (err) {
+    console.error('❌ Error processing default ELOs:', err);
+  }
+
+
+  
 });
 
 // === Express Server for Render Health Check ===
