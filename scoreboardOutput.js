@@ -12,7 +12,7 @@ const HOME_TEAM_INDEX = 7; // H
 const AWAY_TEAM_INDEX = 8; // I
 const GAME_ID_INDEX = 1; // B in RawData
 
-// Column indexes for RawPlayer (example)
+// Column indexes for RawPlayer
 const RP_GAME_ID_INDEX = 5; // GameID
 const RP_TEAM_INDEX = 6; // Team
 const RP_NAME_INDEX = 7; // Name
@@ -62,8 +62,13 @@ export async function postUnsentScores({ sheets, spreadsheetId }) {
     const awayTeam = row[AWAY_TEAM_INDEX];
     const gameId = row[GAME_ID_INDEX];
 
-    // Only post if fully finalized
-    if (!awayScore || !homeScore || !homePlayer || !awayPlayer) continue;
+    // Only post if fully finalized (empty string or undefined means not finalized)
+    if (
+      awayScore === '' || awayScore === undefined ||
+      homeScore === '' || homeScore === undefined ||
+      homePlayer === '' || homePlayer === undefined ||
+      awayPlayer === '' || awayPlayer === undefined
+    ) continue;
 
     // Skip if already posted
     if (row[SCORE_POSTED_INDEX]?.trim() === '✅') continue;
@@ -73,29 +78,37 @@ export async function postUnsentScores({ sheets, spreadsheetId }) {
       r => r[RP_GAME_ID_INDEX] === gameId
     );
 
-    // Top scorer by points
+    // Top scorer by Points
     const topScorers = gamePlayers
       .filter(r => r[RP_TEAM_INDEX] === homeTeam || r[RP_TEAM_INDEX] === awayTeam)
-      .sort((a, b) => (b[RP_PTS_INDEX] || 0) - (a[RP_PTS_INDEX] || 0));
+      .sort((a, b) => (Number(b[RP_PTS_INDEX]) || 0) - (Number(a[RP_PTS_INDEX]) || 0));
 
     let highlights = [];
     if (topScorers.length > 0) {
-      const pts = topScorers[0][RP_PTS_INDEX];
-      const top = topScorers.filter(p => p[RP_PTS_INDEX] === pts);
-      const topStr = top.map(p => `${p[RP_NAME_INDEX]} (${p[RP_TEAM_INDEX]}) ${p[RP_PTS_INDEX]}PTS`).join(', ');
+      const pts = Number(topScorers[0][RP_PTS_INDEX]) || 0;
+      const top = topScorers.filter(p => Number(p[RP_PTS_INDEX]) === pts);
+      const topStr = top
+        .map(p => `${p[RP_NAME_INDEX]} (${p[RP_TEAM_INDEX]}) ${p[RP_PTS_INDEX]}PTS`)
+        .join(', ');
       highlights.push(`⭐ Top Scorer: ${topStr}`);
     }
 
-    // Shutouts
-    const shutoutGoalies = gamePlayers.filter(r => r[RP_SO_INDEX] && Number(r[RP_SO_INDEX]) > 0);
-    shutoutGoalies.forEach(g => highlights.push(`🥅 Shutout: ${g[RP_NAME_INDEX]} (${g[RP_TEAM_INDEX]})`));
+    // Shutouts only for goalies
+    const shutoutGoalies = gamePlayers.filter(
+      r => r[RP_POS_INDEX] === 'G' && Number(r[RP_SO_INDEX]) > 0
+    );
+    shutoutGoalies.forEach(g =>
+      highlights.push(`🥅 Shutout: ${g[RP_NAME_INDEX]} (${g[RP_TEAM_INDEX]})`)
+    );
 
+    // Construct Discord message
     const message =
       `🏒 Final Score!\n` +
       `🚌 Away: ${awayPlayer} (${awayTeam}) ${nhlEmojiMap[awayTeam]} - Score: ${awayScore}\n` +
       `🏠 Home: ${homePlayer} (${homeTeam}) ${nhlEmojiMap[homeTeam]} - Score: ${homeScore}` +
       (highlights.length > 0 ? `\n${highlights.join('\n')}` : '');
 
+    // Send to Discord
     await channel.send({ content: message });
 
     // mark as posted
