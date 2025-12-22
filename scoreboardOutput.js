@@ -49,9 +49,9 @@ export async function postUnsentScores({ sheets, spreadsheetId }) {
     if (row[SCORE_POSTED_INDEX]?.trim() === '✅') continue;
 
     const message =
-      `🏒 Final Score!\n` +
-      `🚌 Away: ${awayPlayer} (${awayTeam}) ${nhlEmojiMap[awayTeam]} - Score: ${awayScore}\n` +
-      `🏠 Home: ${homePlayer} (${homeTeam}) ${nhlEmojiMap[homeTeam]} - Score: ${homeScore}`;
+      `\n🏒 Final Score!\n` +
+      `Away: ${awayPlayer} (${awayTeam}) ${nhlEmojiMap[awayTeam]} - Score: ${awayScore}\n` +
+      `Home: ${homePlayer} (${homeTeam}) ${nhlEmojiMap[homeTeam]} - Score: ${homeScore}`;
 
     await channel.send({ content: message });
 
