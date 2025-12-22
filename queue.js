@@ -390,8 +390,9 @@ async function handleInteraction(interaction, client) {
           }
 
           await ratedChannel.send(
-            `🎮 Rated Game Matchup!\n🚌 Away: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}\n` +
-            `🏠 Home: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}`
+            `🎮 Rated Game Matchup!\n` +
+            `🏠 Team 1: <@${player.id}> ${player.name} [${player.elo}] ${nhlEmojiMap[player.homeTeam]}\n` +
+            `🚌 Team 2: <@${partner.id}> ${partner.name} [${partner.elo}] ${nhlEmojiMap[partner.awayTeam]}`
           );
 
           try {
