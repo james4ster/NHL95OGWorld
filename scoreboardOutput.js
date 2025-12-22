@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, GatewayIntentBits, EmbedBuilder } from 'discord.js';
 import { getNHLEmojiMap } from './nhlEmojiMap.js';
 
 const SCORE_POSTED_INDEX = 74; // BW
@@ -33,7 +33,7 @@ export async function postUnsentScores({ sheets, spreadsheetId }) {
   // Load RawPlayer
   const rpRes = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'RawPlayer!A:Z', // adjust if needed
+    range: 'RawPlayer!A:Z',
   });
   const rawPlayerRows = rpRes.data.values || [];
 
@@ -51,9 +51,6 @@ export async function postUnsentScores({ sheets, spreadsheetId }) {
     return;
   }
 
-  // Track posted GameIDs to prevent duplicates
-  const postedGames = new Set();
-
   for (let i = 1; i < rawRows.length; i++) {
     const row = rawRows[i];
 
@@ -65,62 +62,53 @@ export async function postUnsentScores({ sheets, spreadsheetId }) {
     const awayTeam = row[AWAY_TEAM_INDEX];
     const gameId = row[GAME_ID_INDEX];
 
-    // Only post if fully finalized
-    if (
-      awayScore === '' || awayScore === undefined ||
-      homeScore === '' || homeScore === undefined ||
-      homePlayer === '' || homePlayer === undefined ||
-      awayPlayer === '' || awayPlayer === undefined
-    ) continue;
+    // Only post if fully finalized (score + players filled)
+    if (awayScore === '' || homeScore === '' || !homePlayer || !awayPlayer) continue;
 
     // Skip if already posted
     if (row[SCORE_POSTED_INDEX]?.trim() === '✅') continue;
 
-    // Prevent posting same game twice
-    if (postedGames.has(gameId)) continue;
-    postedGames.add(gameId);
-
-    // Get all players for this game
+    // Find players for this game
     const gamePlayers = rawPlayerRows.filter(r => r[RP_GAME_ID_INDEX] === gameId);
 
-    // Top scorers (skaters only)
-    const skaters = gamePlayers.filter(r => r[RP_POS_INDEX] !== 'G');
-    const maxPts = Math.max(...skaters.map(p => Number(p[RP_PTS_INDEX]) || 0));
-    const topScorers = skaters.filter(p => Number(p[RP_PTS_INDEX]) === maxPts);
+    // Top scorers by Points
+    const topScorers = gamePlayers
+      .filter(r => r[RP_TEAM_INDEX] === homeTeam || r[RP_TEAM_INDEX] === awayTeam)
+      .sort((a, b) => (Number(b[RP_PTS_INDEX]) || 0) - (Number(a[RP_PTS_INDEX]) || 0));
 
     let highlights = [];
-    if (topScorers.length > 0 && maxPts > 0) {
-      const topStr = topScorers
-        .map(p => `${p[RP_NAME_INDEX]} (${p[RP_TEAM_INDEX]}) ${p[RP_PTS_INDEX]}PTS`)
-        .join(', ');
+
+    if (topScorers.length > 0) {
+      const maxPts = Number(topScorers[0][RP_PTS_INDEX]) || 0;
+      const top = topScorers.filter(p => Number(p[RP_PTS_INDEX]) === maxPts);
+      const topStr = top.map(p => `${p[RP_NAME_INDEX]} (${p[RP_TEAM_INDEX]}) ${p[RP_PTS_INDEX]}PTS`).join(', ');
       highlights.push(`⭐ Top Scorer: ${topStr}`);
     }
 
-    // Shutouts (goalies only, unique)
-    const shutoutGoalies = gamePlayers
-      .filter(r => r[RP_POS_INDEX] === 'G' && Number(r[RP_SO_INDEX]) > 0)
-      .reduce((acc, g) => {
-        const key = `${g[RP_NAME_INDEX]}-${g[RP_TEAM_INDEX]}`;
-        if (!acc.seen.has(key)) {
-          acc.seen.add(key);
-          acc.list.push(`🥅 Shutout: ${g[RP_NAME_INDEX]} (${g[RP_TEAM_INDEX]})`);
-        }
-        return acc;
-      }, { seen: new Set(), list: [] }).list;
+    // Shutouts for goalies only
+    const shutoutGoalies = gamePlayers.filter(r => r[RP_POS_INDEX] === 'G' && Number(r[RP_SO_INDEX]) > 0);
+    shutoutGoalies.forEach(g =>
+      highlights.push(`🥅 Shutout: ${g[RP_NAME_INDEX]} (${g[RP_TEAM_INDEX]})`)
+    );
 
-    highlights.push(...shutoutGoalies);
+    // Create the embed
+    const embed = new EmbedBuilder()
+      .setTitle('🏒 Final Score!')
+      .setColor('#1F8B4C') // optional: set a color for the embed
+      .addFields(
+        { name: 'Away', value: `${awayPlayer} (${awayTeam}) ${nhlEmojiMap[awayTeam]} - Score: ${awayScore}`, inline: false },
+        { name: 'Home', value: `${homePlayer} (${homeTeam}) ${nhlEmojiMap[homeTeam]} - Score: ${homeScore}`, inline: false },
+      );
 
-    // Build message
-    const message =
-      `🏒 Final Score!\n` +
-      `🚌 Away: ${awayPlayer} (${awayTeam}) ${nhlEmojiMap[awayTeam]} - Score: ${awayScore}\n` +
-      `🏠 Home: ${homePlayer} (${homeTeam}) ${nhlEmojiMap[homeTeam]} - Score: ${homeScore}` +
-      (highlights.length > 0 ? `\n${highlights.join('\n')}` : '');
+    if (highlights.length > 0) {
+      embed.addFields(
+        { name: 'Highlights', value: highlights.join('\n'), inline: false }
+      );
+    }
 
-    // Send to Discord
-    await channel.send({ content: message });
+    await channel.send({ embeds: [embed] });
 
-    // Mark as posted
+    // mark as posted
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `RawData!BW${i + 1}`,
