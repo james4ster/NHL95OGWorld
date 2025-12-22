@@ -81,7 +81,7 @@ export async function postUnsentScores({ sheets, spreadsheetId }) {
     if (topScorers.length > 0) {
       const maxPts = Number(topScorers[0][RP_PTS_INDEX]) || 0;
       const top = topScorers.filter(p => Number(p[RP_PTS_INDEX]) === maxPts);
-      const topStr = top.map(p => `${p[RP_NAME_INDEX]} (${p[RP_TEAM_INDEX]}) ${p[RP_PTS_INDEX]}PTS`).join(', ');
+      const topStr = top.map(p => `${p[RP_NAME_INDEX]} (${p[RP_TEAM_INDEX]}) ${p[RP_PTS_INDEX]} PTS`).join(', ');
       highlights.push(`⭐ Top Scorer: ${topStr}`);
     }
 
