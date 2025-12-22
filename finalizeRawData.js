@@ -2,6 +2,8 @@
 import { google } from 'googleapis';
 import updateCoachesStreaks from './updateCoachesStreaks.js';
 import updateElo from './updateELO.js';
+import { postUnsentScores } from './scoreboardOutput.js';
+
 
 async function finalizeRawData() {
   try {
@@ -93,8 +95,17 @@ async function finalizeRawData() {
 
     console.log(`✅ Finalized ${rawUpdates.length} RawData row(s) from PendingGames`);
 
+    
+    // Update ELO after processing processed game
     await updateElo({ sheets, spreadsheetId: process.env.SPREADSHEET_ID });
 
+    // Post scores to Discord Scoreboard channel
+    await postUnsentScores({
+      sheets,
+      spreadsheetId: process.env.SPREADSHEET_ID,
+    });
+
+    
   } catch (err) {
     console.error('❌ Error finalizing RawData:', err);
   }
