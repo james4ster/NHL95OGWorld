@@ -51,6 +51,9 @@ export async function postUnsentScores({ sheets, spreadsheetId }) {
     return;
   }
 
+  // Track posted GameIDs to prevent duplicates
+  const postedGames = new Set();
+
   for (let i = 1; i < rawRows.length; i++) {
     const row = rawRows[i];
 
@@ -62,7 +65,7 @@ export async function postUnsentScores({ sheets, spreadsheetId }) {
     const awayTeam = row[AWAY_TEAM_INDEX];
     const gameId = row[GAME_ID_INDEX];
 
-    // Only post if fully finalized (empty string or undefined means not finalized)
+    // Only post if fully finalized
     if (
       awayScore === '' || awayScore === undefined ||
       homeScore === '' || homeScore === undefined ||
@@ -73,35 +76,41 @@ export async function postUnsentScores({ sheets, spreadsheetId }) {
     // Skip if already posted
     if (row[SCORE_POSTED_INDEX]?.trim() === '✅') continue;
 
-    // Find players for this game
-    const gamePlayers = rawPlayerRows.filter(
-      r => r[RP_GAME_ID_INDEX] === gameId
-    );
+    // Prevent posting same game twice
+    if (postedGames.has(gameId)) continue;
+    postedGames.add(gameId);
 
-    // Top scorer by Points
-    const topScorers = gamePlayers
-      .filter(r => r[RP_TEAM_INDEX] === homeTeam || r[RP_TEAM_INDEX] === awayTeam)
-      .sort((a, b) => (Number(b[RP_PTS_INDEX]) || 0) - (Number(a[RP_PTS_INDEX]) || 0));
+    // Get all players for this game
+    const gamePlayers = rawPlayerRows.filter(r => r[RP_GAME_ID_INDEX] === gameId);
+
+    // Top scorers (skaters only)
+    const skaters = gamePlayers.filter(r => r[RP_POS_INDEX] !== 'G');
+    const maxPts = Math.max(...skaters.map(p => Number(p[RP_PTS_INDEX]) || 0));
+    const topScorers = skaters.filter(p => Number(p[RP_PTS_INDEX]) === maxPts);
 
     let highlights = [];
-    if (topScorers.length > 0) {
-      const pts = Number(topScorers[0][RP_PTS_INDEX]) || 0;
-      const top = topScorers.filter(p => Number(p[RP_PTS_INDEX]) === pts);
-      const topStr = top
+    if (topScorers.length > 0 && maxPts > 0) {
+      const topStr = topScorers
         .map(p => `${p[RP_NAME_INDEX]} (${p[RP_TEAM_INDEX]}) ${p[RP_PTS_INDEX]}PTS`)
         .join(', ');
       highlights.push(`⭐ Top Scorer: ${topStr}`);
     }
 
-    // Shutouts only for goalies
-    const shutoutGoalies = gamePlayers.filter(
-      r => r[RP_POS_INDEX] === 'G' && Number(r[RP_SO_INDEX]) > 0
-    );
-    shutoutGoalies.forEach(g =>
-      highlights.push(`🥅 Shutout: ${g[RP_NAME_INDEX]} (${g[RP_TEAM_INDEX]})`)
-    );
+    // Shutouts (goalies only, unique)
+    const shutoutGoalies = gamePlayers
+      .filter(r => r[RP_POS_INDEX] === 'G' && Number(r[RP_SO_INDEX]) > 0)
+      .reduce((acc, g) => {
+        const key = `${g[RP_NAME_INDEX]}-${g[RP_TEAM_INDEX]}`;
+        if (!acc.seen.has(key)) {
+          acc.seen.add(key);
+          acc.list.push(`🥅 Shutout: ${g[RP_NAME_INDEX]} (${g[RP_TEAM_INDEX]})`);
+        }
+        return acc;
+      }, { seen: new Set(), list: [] }).list;
 
-    // Construct Discord message
+    highlights.push(...shutoutGoalies);
+
+    // Build message
     const message =
       `🏒 Final Score!\n` +
       `🚌 Away: ${awayPlayer} (${awayTeam}) ${nhlEmojiMap[awayTeam]} - Score: ${awayScore}\n` +
@@ -111,7 +120,7 @@ export async function postUnsentScores({ sheets, spreadsheetId }) {
     // Send to Discord
     await channel.send({ content: message });
 
-    // mark as posted
+    // Mark as posted
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `RawData!BW${i + 1}`,
