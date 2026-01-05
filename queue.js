@@ -39,6 +39,23 @@ function buildAckButtons(playerId, emoji) {
   );
 }
 
+// === Opt in / out of queue notifications ===
+function buildNotifyButtons() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('queue_notify_on')
+      .setLabel('🔔 Queue Alerts On')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('queue_notify_off')
+      .setLabel('🔕 Queue Alerts Off')
+      .setStyle(ButtonStyle.Secondary)
+  );
+}
+
+
+
+
 // ----------------- Queue Embed -----------------
 async function buildQueueEmbed() {
   if (queue.length === 0) {
@@ -109,15 +126,15 @@ async function sendOrUpdateQueueMessage(client) {
     }
 
     if (existing) {
-      await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
+      await existing.edit({ embeds: [embed], components: [buildQueueButtons(), buildNotifyButtons()] });
     } else {
       const messages = await channel.messages.fetch({ limit: 10 });
       existing = messages.find(m => m.content === '**NHL \'95 Game Queue**');
       if (existing) {
         client.queueMessageId = existing.id;
-        await existing.edit({ embeds: [embed], components: [buildQueueButtons()] });
+        await existing.edit({ embeds: [embed], components: [buildQueueButtons(), buildNotifyButtons()] });
       } else {
-        const newMsg = await channel.send({ content: '**NHL \'95 Game Queue**', embeds: [embed], components: [buildQueueButtons()] });
+        const newMsg = await channel.send({ content: '**NHL \'95 Game Queue**', embeds: [embed], components: [buildQueueButtons(), buildNotifyButtons()] });
         client.queueMessageId = newMsg.id;
       }
     }
