@@ -15,6 +15,7 @@ let queue = [];
 
 const QUEUE_CHANNEL_ID = process.env.QUEUE_CHANNEL_ID;
 const RATED_GAMES_CHANNEL_ID = process.env.RATED_GAMES_CHANNEL_ID;
+const ANNOUNCEMENTS_CHANNEL_ID = process.env.ANNOUNCEMENTS_CHANNEL_ID;
 
 // ----------------- Buttons -----------------
 function buildQueueButtons() {
@@ -319,6 +320,24 @@ async function processPendingMatchups(client) {
   }
 }
 
+// === Notify users in queue-notify role when a player joins the queue ===
+async function notifyQueueUsers(client, message) {
+  try {
+    const channel = await client.channels.fetch(ANNOUNCEMENTS_CHANNEL_ID);
+    const guild = channel.guild;
+    const notifyRole = guild.roles.cache.find(r => r.name === 'queue-notify');
+
+    if (notifyRole) {
+      await channel.send(`${notifyRole} 🔔 ${message}`);
+    } else {
+      await channel.send(`🔔 ${message}`);
+    }
+  } catch (err) {
+    console.error('❌ Failed to notify queue-notify role:', err);
+  }
+}
+
+
 
 // ----------------- Interaction handler -----------------
 async function handleInteraction(interaction, client) {
@@ -345,6 +364,9 @@ async function handleInteraction(interaction, client) {
       const { nickname, elo } = await fetchPlayerData(userId);
       if (!queue.find(u => u.id === userId)) {
         queue.push({ id: userId, name: nickname, elo, status: 'waiting' });
+
+        // Notify opted-in users
+        await notifyQueueUsers(client, `${nickname} joined the queue!`);
       }
       await sendOrUpdateQueueMessage(client);
       await processPendingMatchups(client);
