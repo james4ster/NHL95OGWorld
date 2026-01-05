@@ -39,7 +39,7 @@ function buildAckButtons(playerId, emoji) {
   );
 }
 
-// === Opt in / out of queue notifications ===
+// === Button to Opt in / out of queue notifications ===
 function buildNotifyButtons() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -51,6 +51,53 @@ function buildNotifyButtons() {
       .setLabel('🔕 Queue Alerts Off')
       .setStyle(ButtonStyle.Secondary)
   );
+}
+
+
+// ----------------- Notify Opt In/Out -----------------
+// === Handler to add/remove users from queue notify set ===
+async function handleNotifyInteraction(interaction, client) {
+  const userId = interaction.user.id;
+  const member = await interaction.guild.members.fetch(userId);
+  const notifyRole = interaction.guild.roles.cache.find(r => r.name === 'queue-notify');
+
+  if (!notifyRole) return;
+
+  if (interaction.customId === 'queue_notify_on') {
+    if (!member.roles.cache.has(notifyRole.id)) {
+      await member.roles.add(notifyRole);
+    }
+    await interaction.followUp({ content: '🔔 You have **opted in** to queue notifications!', ephemeral: true });
+    return;
+  }
+
+  if (interaction.customId === 'queue_notify_off') {
+    if (member.roles.cache.has(notifyRole.id)) {
+      await member.roles.remove(notifyRole);
+    }
+    await interaction.followUp({ content: '🔕 You have **opted out** of queue notifications!', ephemeral: true });
+    return;
+  }
+}
+
+
+// ----------------- Updated Queue Join to Ping Role -----------------
+async function handleQueueJoinNotify(userId, client) {
+  // Only ping if queue was empty
+  if (queue.length === 1) {
+    try {
+      const channel = await client.channels.fetch(QUEUE_CHANNEL_ID);
+
+      // Ping everyone in the notify role
+      const guild = channel.guild;
+      const notifyRole = guild.roles.cache.find(r => r.name === 'queue-notify');
+      if (notifyRole) {
+        await channel.send(`${notifyRole} 🔔 Someone joined the queue!`);
+      }
+    } catch (err) {
+      console.error('❌ Failed to ping queue-notify role:', err);
+    }
+  }
 }
 
 
@@ -296,6 +343,14 @@ async function processPendingMatchups(client) {
 
 // ----------------- Interaction handler -----------------
 async function handleInteraction(interaction, client) {
+  
+  // --- Handle Notify Buttons ---
+  if (['queue_notify_on', 'queue_notify_off'].includes(interaction.customId)) {
+    await handleNotifyInteraction(interaction, client);
+    return;
+  }
+  
+  
   if (!interaction.isButton()) return;
   const userId = interaction.user.id;
 
@@ -311,6 +366,7 @@ async function handleInteraction(interaction, client) {
         queue.push({ id: userId, name: nickname, elo, status: 'waiting' });
       }
       await sendOrUpdateQueueMessage(client);
+      await handleQueueJoinNotify(userId, client);  // Notify players that have opted in for queue alerts
       await processPendingMatchups(client);
       return;
     }
